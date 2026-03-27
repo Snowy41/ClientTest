@@ -1,0 +1,55 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.hades.preview'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+// LWJGL version and platform natives
+def lwjglVersion = '3.3.3'
+def lwjglNatives = org.gradle.internal.os.OperatingSystem.current().with {
+    if (it.isWindows()) return 'natives-windows'
+    if (it.isLinux()) return 'natives-linux'
+    if (it.isMacOsX()) return 'natives-macos'
+    throw new GradleException("Unsupported OS: ${it.name}")
+}
+
+dependencies {
+    // LWJGL core + OpenGL + GLFW + STB
+    implementation platform("org.lwjgl:lwjgl-bom:${lwjglVersion}")
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-opengl"
+    implementation "org.lwjgl:lwjgl-glfw"
+    implementation "org.lwjgl:lwjgl-stb"
+
+    runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-stb::${lwjglNatives}"
+
+    // JSON
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    archiveBaseName.set('preview-sdk')
+
+    manifest {
+        attributes(
+            'Main-Class': 'com.hades.preview.PreviewSDK'
+        )
+    }
+}
+
+build.dependsOn shadowJar

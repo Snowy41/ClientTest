@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'dev.client'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Deobfuskiertes Vanilla 1.8.9 JAR – nur zum Kompilieren, NICHT in die Shadow-JAR
+    compileOnly files('libs/client_recomp.jar')
+    compileOnly files('libs/1.8.9.jar')
+    compileOnly files('libs/labymodclient.jar')
+    
+    // Netty for packet interception compilation
+    compileOnly 'io.netty:netty-all:4.0.23.Final'
+
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'net.bytebuddy:byte-buddy:1.14.18'
+    implementation 'net.bytebuddy:byte-buddy-agent:1.14.18'
+    
+    // WebSockets for Realtime Backend Integration
+    implementation 'org.java-websocket:Java-WebSocket:1.5.3'
+
+    testImplementation 'junit:junit:4.13.2'
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    archiveBaseName.set('injection-client')
+
+    relocate 'com.google.gson', 'dev.client.libs.gson'
+    relocate 'net.bytebuddy', 'dev.client.libs.bytebuddy'
+    relocate 'org.java_websocket', 'dev.client.libs.websocket'
+    relocate 'org.slf4j', 'dev.client.libs.slf4j'
+
+    manifest {
+        attributes(
+                'Premain-Class': 'com.hades.client.HadesAgent',
+                'Agent-Class': 'com.hades.client.HadesAgent',
+                'Can-Redefine-Classes': 'true',
+                'Can-Retransform-Classes': 'true',
+                'Entry-Class': 'dev.client.ClientEntry',
+                'Client-Version': project.version
+        )
+    }
+}
+
+build.dependsOn shadowJar

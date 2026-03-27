@@ -1,0 +1,42 @@
+# Minecraft Decompiled Sources (Do not upload to avoid DMCA and bloat)
+Dump/
+sources/
+reference/
+
+# GrimAC Source Code
+GrimAC_Source/
+
+# CFR / Decompiler output
+out_cfr/
+cfr.jar
+
+# Debug log files
+*.log
+logs/
+*.txt
+
+# Build caches & compiled binaries
+Java/client/build/
+Java/client/.gradle/
+Java/client/out/
+Java/client/bin/
+
+x64/
+.vs/
+Debug/
+Release/
+
+# Java / IDE Specific
+*.class
+*.iml
+.idea/
+.settings/
+.vscode/
+.classpath
+.project
+
+# Misc Temp Files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
