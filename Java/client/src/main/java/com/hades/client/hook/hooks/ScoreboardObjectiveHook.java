@@ -15,7 +15,7 @@ public class ScoreboardObjectiveHook {
     public static boolean onGetObjectiveEnter(@Advice.Argument(0) int slot) {
         try {
             ScoreboardModule mod = ScoreboardModule.getInstance();
-            if (mod != null && mod.isEnabled() && slot == 1) {
+            if (mod != null && mod.isEnabled() && slot == 1 && !ScoreboardModule.isHadesFetching) {
                 // If it's asking for the sidebar objective, seamlessly abort native evaluation.
                 // Since the return type is an Object (ScoreObjective), the uninitialized value is natively null!
                 return true; 

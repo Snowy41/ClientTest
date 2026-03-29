@@ -45,6 +45,8 @@ public interface IMinecraft {
     void setMouseOverBlock(double hitX, double hitY, double hitZ, int blockX, int blockY, int blockZ, int facingId);
     
     boolean isTargetingBlockTop();
+
+    void setRightClickDelayTimer(int delay);
     
     /** Returns 0 = MISS, 1 = BLOCK, 2 = ENTITY from MovingObjectType enum */
     int getMouseOverType();
@@ -56,4 +58,6 @@ public interface IMinecraft {
     Object getMouseOverBlockPos();
     
     void attackEntity(com.hades.client.api.interfaces.IPlayer player, com.hades.client.api.interfaces.IEntity target);
+    
+    void setCrackedSession(String username);
 }

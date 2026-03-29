@@ -330,9 +330,14 @@ public class PacketFieldMapper {
      * @return Human-readable name if mapped, otherwise the original obfFieldName
      */
     public static String resolve(String simpleClassName, String obfFieldName) {
-        Map<String, String> fields = MAPPINGS.get(simpleClassName);
-        if (fields == null)
-            return obfFieldName;
-        return fields.getOrDefault(obfFieldName, obfFieldName);
+        com.hades.client.event.EventBus.startSection("PacketFieldMapper.resolve");
+        try {
+            Map<String, String> fields = MAPPINGS.get(simpleClassName);
+            if (fields == null)
+                return obfFieldName;
+            return fields.getOrDefault(obfFieldName, obfFieldName);
+        } finally {
+            com.hades.client.event.EventBus.endSection("PacketFieldMapper.resolve");
+        }
     }
 }

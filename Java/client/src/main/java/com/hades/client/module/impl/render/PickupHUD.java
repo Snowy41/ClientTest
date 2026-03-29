@@ -8,6 +8,8 @@ import com.hades.client.event.events.Render2DEvent;
 import com.hades.client.gui.clickgui.theme.Theme;
 import com.hades.client.manager.InventoryManager;
 import com.hades.client.module.Module;
+import com.hades.client.module.setting.BooleanSetting;
+import com.hades.client.module.setting.ModeSetting;
 import com.hades.client.module.setting.NumberSetting;
 import com.hades.client.util.ItemRenderUtil;
 
@@ -21,6 +23,9 @@ public class PickupHUD extends Module {
     private final NumberSetting displayTime = new NumberSetting("Display Time (s)", "How long each item stays on screen", 3.0, 1.0, 10.0, 0.5);
     public final NumberSetting posX = new NumberSetting("Pos X", "X position offset from center", 110.0, -1000.0, 1000.0, 1.0);
     public final NumberSetting posY = new NumberSetting("Pos Y", "Y position offset from center", 120.0, -1000.0, 1000.0, 1.0);
+    public final ModeSetting alignment = new ModeSetting("Alignment", "Right", "Right", "Left");
+    public final BooleanSetting blur = new BooleanSetting("Blur Background", true);
+    public final BooleanSetting dropShadow = new BooleanSetting("Drop Shadow", true);
 
     private final List<PickupEntry> pickups = new ArrayList<>();
     private final Object[] previousInventory = new Object[36];
@@ -32,6 +37,9 @@ public class PickupHUD extends Module {
         this.register(displayTime);
         this.register(posX);
         this.register(posY);
+        this.register(alignment);
+        this.register(blur);
+        this.register(dropShadow);
         posX.setHidden(true);
         posY.setHidden(true);
     }
@@ -139,18 +147,25 @@ public class PickupHUD extends Module {
         float startY = resolution[1] / 2f + posY.getValue().floatValue();
 
         float yOffset = 0;
+        
+        float mcScale = 1f;
+        try {
+            int[] sr = HadesAPI.Game.getScaledResolution();
+            if (sr[0] > 0) mcScale = (float) org.lwjgl.opengl.Display.getWidth() / sr[0];
+        } catch (Throwable ignored) {}
 
         for (int i = 0; i < pickups.size(); i++) {
             PickupEntry entry = pickups.get(i);
             
             // Layout
-            float boxHeight = 22f;
-            float fontHeight = HadesAPI.Render.getFontHeight(0.9f);
+            float boxHeight = 24f;
+            float fontSize = 14f;
+            float fontHeight = HadesAPI.Render.getFontHeight(fontSize, false, false);
             
             // Name + amount string
             String txt = entry.amount > 1 ? entry.name + " §8x" + entry.amount : entry.name;
-            float txtWidth = HadesAPI.Render.getStringWidth(txt, 0.9f);
-            float boxWidth = 24f + txtWidth + 6f; // Icon + spacing + text + padding
+            float txtWidth = HadesAPI.Render.getStringWidth(txt, fontSize, false, false);
+            float boxWidth = 32f + txtWidth + 8f; // Pad(4) + Icon(16) + Pad(8) + Text(txtWidth) + Pad(8)
             
             // Animations
             long elapsed = System.currentTimeMillis() - entry.timestamp;
@@ -173,27 +188,62 @@ public class PickupHUD extends Module {
 
             float currentY = startY - yOffset;
 
-            // Draw Glassmorphism Box
-            int bgColor = HadesAPI.Render.color(15, 15, 18, (int) (180 * alphaAnim));
-            int outlineColor = HadesAPI.Render.colorWithAlpha(Theme.WINDOW_OUTLINE, (int) (100 * alphaAnim));
-            
-            // Center scaling offset
+            // Box dimensions
             float scaledW = boxWidth * scale;
             float scaledH = boxHeight * scale;
             float drawX = startX - (scaledW - boxWidth) / 2f;
             float drawY = currentY - (scaledH - boxHeight) / 2f;
+            float radius = 4f;
 
-            HadesAPI.Render.drawRoundedRect(drawX, drawY, scaledW, scaledH, 4f, bgColor);
-            HadesAPI.Render.drawRoundedRect(drawX, drawY, scaledW, 0.5f, 0f, outlineColor); // Top border
+            // Draw Box and Blur
+            if (dropShadow.getValue()) {
+                HadesAPI.Render.drawRoundedShadow(drawX, drawY, scaledW, scaledH, radius, 5f);
+            }
 
-            // Draw Item Icon
-            org.lwjgl.opengl.GL11.glPushMatrix();
-            HadesAPI.Render.color(255, 255, 255, alpha); // Doesn't affect raw item render directly, but cleans state
-            ItemRenderUtil.drawItemIcon(entry.rawStack, drawX + 4, drawY + (scaledH - 16) / 2f);
-            org.lwjgl.opengl.GL11.glPopMatrix();
+            if (blur.getValue()) {
+                int tint = HadesAPI.Render.colorWithAlpha(0xFF0A0A0C, (int)(40 * alphaAnim)); // 15% dark tint for readability
+                try {
+                    com.hades.client.util.BlurUtil.drawBlurredRect(drawX, drawY, scaledW, scaledH, radius, tint, 2, mcScale);
+                } catch (Throwable t) {
+                    int bgColor = HadesAPI.Render.colorWithAlpha(Theme.WINDOW_BG, (int)(200 * alphaAnim));
+                    HadesAPI.Render.drawRoundedRect(drawX, drawY, scaledW, scaledH, radius, bgColor);
+                }
+            } else {
+                int bgColor = HadesAPI.Render.colorWithAlpha(Theme.WINDOW_BG, (int)(200 * alphaAnim));
+                HadesAPI.Render.drawRoundedRect(drawX, drawY, scaledW, scaledH, radius, bgColor);
+            }
 
-            // Draw Text
-            HadesAPI.Render.drawString(txt, drawX + 24, drawY + (scaledH - fontHeight) / 2f + 1, HadesAPI.Render.colorWithAlpha(Theme.TEXT_PRIMARY, alpha), 0.9f);
+            boolean isRightAligned = alignment.getValue().equals("Right");
+            int accentColor = HadesAPI.Render.colorWithAlpha(Theme.ACCENT_PRIMARY, alpha);
+
+            // Draw Accent Bar, Icon, and Text based on Alignment
+            if (isRightAligned) {
+                // Bar on the Right
+                HadesAPI.Render.drawRoundedRect(drawX + scaledW - 2f, drawY + 3f, 2f, scaledH - 6f, 1f, accentColor);
+                
+                // Icon on the Left
+                org.lwjgl.opengl.GL11.glPushMatrix();
+                HadesAPI.Render.color(255, 255, 255, alpha);
+                ItemRenderUtil.drawItemIcon(entry.rawStack, drawX + 8f, drawY + (scaledH - 16f) / 2f);
+                org.lwjgl.opengl.GL11.glPopMatrix();
+                
+                // Text aligned normally after icon
+                HadesAPI.Render.drawString(txt, drawX + 32f, drawY + (scaledH - fontHeight) / 2f + 1f, 
+                        HadesAPI.Render.colorWithAlpha(Theme.TEXT_PRIMARY, alpha), fontSize, true, false, true);
+            } else {
+                // Bar on the Left
+                HadesAPI.Render.drawRoundedRect(drawX, drawY + 3f, 2f, scaledH - 6f, 1f, accentColor);
+                
+                // Text aligned directly after bar
+                HadesAPI.Render.drawString(txt, drawX + 8f, drawY + (scaledH - fontHeight) / 2f + 1f, 
+                        HadesAPI.Render.colorWithAlpha(Theme.TEXT_PRIMARY, alpha), fontSize, true, false, true);
+                
+                // Icon on the Right
+                org.lwjgl.opengl.GL11.glPushMatrix();
+                HadesAPI.Render.color(255, 255, 255, alpha);
+                ItemRenderUtil.drawItemIcon(entry.rawStack, drawX + scaledW - 24f, drawY + (scaledH - 16f) / 2f);
+                org.lwjgl.opengl.GL11.glPopMatrix();
+            }
 
             yOffset += (boxHeight + 4) * alphaAnim; // Shrink space if fading out
         }

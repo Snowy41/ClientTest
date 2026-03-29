@@ -5,8 +5,10 @@ import com.hades.client.module.impl.render.ScoreboardModule;
 
 /**
  * Hooks LabyMod 4's ScoreboardHudWidget to intercept its rendering and logic.
- * Instead of violently skipping the method (which breaks LabyMod's native GL state and makes the Vignette vanish),
- * we gracefully push a matrix, translate it thousands of pixels off-screen, and then cleanly pop it.
+ * Instead of violently skipping the method (which breaks LabyMod's native GL
+ * state and makes the Vignette vanish),
+ * we gracefully push a matrix, translate it thousands of pixels off-screen, and
+ * then cleanly pop it.
  */
 public class LabyScoreboardHook {
 
@@ -20,7 +22,8 @@ public class LabyScoreboardHook {
                 stack.translate(9999f, 9999f, 0f);
                 stack.scale(0f, 0f, 0f);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     @Advice.OnMethodExit
@@ -31,6 +34,7 @@ public class LabyScoreboardHook {
                 net.labymod.api.client.render.matrix.Stack stack = (net.labymod.api.client.render.matrix.Stack) stackRaw;
                 stack.pop();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 }

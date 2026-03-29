@@ -200,7 +200,7 @@ public class LabyModAdapter implements PlatformAdapter {
                                 .minecraftWindow();
                         int scaledW = window.getScaledWidth();
                         int scaledH = window.getScaledHeight();
-                        float partialTicks = e.getTickDelta();
+                        float partialTicks = Laby.labyAPI().minecraft().getTickDelta();
 
                         // Get the Stack and Context from the event's screenContext
                         net.labymod.api.client.render.matrix.Stack stack = null;
@@ -428,10 +428,18 @@ public class LabyModAdapter implements PlatformAdapter {
                 } catch (NoSuchMethodException ignored) {}
             }
             if (widget != null) {
-                java.lang.reflect.Method getConfig = widget.getClass().getMethod("config");
-                Object config = getConfig.invoke(widget);
-                java.lang.reflect.Method setEnabled = config.getClass().getMethod("setEnabled", boolean.class);
-                setEnabled.invoke(config, !enable);
+                java.lang.reflect.Method getConfig = null;
+                for (String mName : new String[]{"getConfig", "config"}) {
+                    try {
+                        getConfig = widget.getClass().getMethod(mName);
+                        break;
+                    } catch (NoSuchMethodException ignored) {}
+                }
+                if (getConfig != null) {
+                    Object config = getConfig.invoke(widget);
+                    java.lang.reflect.Method setEnabled = config.getClass().getMethod("setEnabled", boolean.class);
+                    setEnabled.invoke(config, !enable);
+                }
             }
         } catch (Throwable ignored) {
             // Silently ignore — our hook handles everything

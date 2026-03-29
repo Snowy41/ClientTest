@@ -4,11 +4,10 @@ import com.hades.client.event.EventHandler;
 import com.hades.client.event.events.TickEvent;
 import com.hades.client.api.HadesAPI;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+
 
 /**
  * Advanced Centralized Target Management System.
@@ -58,84 +57,99 @@ public class TargetManager {
 
     @EventHandler
     public void onTick(TickEvent event) {
-        trackEntitySpawns();
-        update();
-    }
-
-    /**
-     * Tracks newly appeared entities and records their first-seen timestamp.
-     * Used to reject freshly-spawned NPC traps that Intave uses.
-     */
-    private void trackEntitySpawns() {
-        if (HadesAPI.world == null)
+        if (HadesAPI.world == null) {
+            target = null;
             return;
-        long now = System.currentTimeMillis();
-        List<com.hades.client.api.interfaces.IEntity> entities = HadesAPI.world.getLoadedEntities();
-        for (com.hades.client.api.interfaces.IEntity e : entities) {
-            entitySpawnTimes.putIfAbsent(e.getEntityId(), now);
         }
-        // Cleanup: remove entries for entities that no longer exist
-        if (entitySpawnTimes.size() > entities.size() * 2) {
-            java.util.Set<Integer> currentIds = entities.stream()
-                    .map(com.hades.client.api.interfaces.IEntity::getEntityId)
-                    .collect(java.util.stream.Collectors.toSet());
-            entitySpawnTimes.keySet().removeIf(id -> !currentIds.contains(id));
-        }
+        List<com.hades.client.api.interfaces.IEntity> loadedEntities = HadesAPI.world.getLoadedEntities();
+        update(loadedEntities);
     }
 
-    public void update() {
+    public void update(List<com.hades.client.api.interfaces.IEntity> loadedEntities) {
         com.hades.client.api.interfaces.IEntity player = HadesAPI.player;
         if (player == null) {
             target = null;
             return;
         }
 
-        // Pre-calculate local player health once to avoid O(N^2) lookups in LabyMod
-        // wrapper
         final float localPlayerHealth = HadesAPI.Player.getHealth();
-
-        // 1. Instant Clear if local player is dead
         if (localPlayerHealth <= 0 || Float.isNaN(localPlayerHealth)) {
             target = null;
-            return; // completely halt targeting
+            return; 
         }
 
-        // If we currently have a target, check if it's still valid
-        if (target != null) {
-            float th = target.getHealth();
-            // 2. Instant Clear if target is explicitly dead or invalid object
-            if (th <= 0 || Float.isNaN(th) || !target.isLiving() || target.getRaw() == player.getRaw()) {
-                target = null;
-                ticksWithoutTarget = 0;
-            } 
-            // 3. Hysteresis (anti-flicker) for FOV/Range dropouts
-            else if (!isValid(target, localPlayerHealth)
-                    || CombatUtil.getDistanceToBox(HadesAPI.player, target) > maxRange) {
-                ticksWithoutTarget++;
-                if (ticksWithoutTarget >= SWITCH_COOLDOWN) {
-                    target = null;
+        boolean currentTargetExists = false;
+        com.hades.client.api.interfaces.IEntity bestTarget = null;
+        double bestScore = Double.MAX_VALUE;
+        long now = System.currentTimeMillis();
+
+        int targetId = target != null ? target.getEntityId() : -1;
+        double pX = player.getX();
+        double pY = player.getY();
+        double pZ = player.getZ();
+        double extendedRangeSq = (maxRange + 4.0) * (maxRange + 4.0);
+
+        // ── Single Pass Optimization ──
+        for (com.hades.client.api.interfaces.IEntity e : loadedEntities) {
+            int id = e.getEntityId();
+            
+            // 1. Spawn Tracking
+            entitySpawnTimes.putIfAbsent(id, now);
+
+            // 2. Target Validation
+            if (id == targetId) {
+                currentTargetExists = true;
+                target = e; 
+            }
+
+            // 3. Fast Distance Pre-filter
+            double dx = e.getX() - pX;
+            double dy = e.getY() - pY;
+            double dz = e.getZ() - pZ;
+            if ((dx * dx + dy * dy + dz * dz) > extendedRangeSq) {
+                continue;
+            }
+
+            // 4. Deep Inspection & Scoring
+            if (isValid(e, localPlayerHealth)) {
+                double score = getHeuristicScore(e);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestTarget = e;
                 }
-            } else {
-                ticksWithoutTarget = 0;
             }
         }
 
-        // Only search for a new target if we lost the old one or priority demands
-        // continuous updates
-        List<com.hades.client.api.interfaces.IEntity> validTargets = HadesAPI.world.getLoadedEntities().stream()
-                .filter(e -> isValid(e, localPlayerHealth))
-                .collect(Collectors.toList());
-
-        if (validTargets.isEmpty()) {
-            target = null;
-            return;
+        // Cleanup spawn times map
+        if (entitySpawnTimes.size() > loadedEntities.size() * 2) {
+            java.util.Set<Integer> currentIds = new java.util.HashSet<>(loadedEntities.size());
+            for (com.hades.client.api.interfaces.IEntity e : loadedEntities) {
+                currentIds.add(e.getEntityId());
+            }
+            entitySpawnTimes.keySet().removeIf(id -> !currentIds.contains(id));
         }
 
-        com.hades.client.api.interfaces.IEntity bestTarget = validTargets.stream()
-                .min(Comparator.comparingDouble(this::getHeuristicScore))
-                .orElse(null);
+        if (target != null) {
+            if (!currentTargetExists) {
+                target = null;
+                ticksWithoutTarget = 0;
+            } else {
+                float th = target.getHealth();
+                if (th <= 0 || Float.isNaN(th) || !target.isLiving() || target.getRaw() == player.getRaw()) {
+                    target = null;
+                    ticksWithoutTarget = 0;
+                } 
+                else if (!isValid(target, localPlayerHealth) || CombatUtil.getDistanceToBox(player, target) > maxRange) {
+                    ticksWithoutTarget++;
+                    if (ticksWithoutTarget >= SWITCH_COOLDOWN) {
+                        target = null;
+                    }
+                } else {
+                    ticksWithoutTarget = 0;
+                }
+            } 
+        }
 
-        // Anti-flicker: Only switch targets if the new target is significantly better
         if (target == null || bestTarget != target) {
             target = bestTarget;
             ticksWithoutTarget = 0;

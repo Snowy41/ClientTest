@@ -22,6 +22,17 @@ import com.hades.client.platform.ClientPlatform;
  */
 public class RenderUtil {
 
+    // ── Trig LUT caching (Performance Optimization) ──
+    private static final float[] SIN_LUT = new float[361];
+    private static final float[] COS_LUT = new float[361];
+    static {
+        for (int i = 0; i <= 360; i++) {
+            double rad = Math.toRadians(i);
+            SIN_LUT[i] = (float) Math.sin(rad);
+            COS_LUT[i] = (float) Math.cos(rad);
+        }
+    }
+
     // ── GL constants (from org.lwjgl.opengl.GL11) ──
     private static final int GL_QUADS = 0x0007;
     private static final int GL_TEXTURE_2D = 0x0DE1;
@@ -327,87 +338,96 @@ public class RenderUtil {
         if (color == 0 || width <= 0 || height <= 0)
             return;
 
-        if (!com.hades.client.api.HadesAPI.Render.isForceRenderUtil()
-                && com.hades.client.platform.PlatformManager.getDetectedPlatform() == com.hades.client.platform.ClientPlatform.LABYMOD && com.hades.client.util.LabyRenderer.isAvailable() && com.hades.client.util.LabyRenderer.getCurrentScreenContext() != null) {
-            com.hades.client.util.LabyRenderer.drawRect(x, y, width, height, color);
-            return;
-        }
-
+        com.hades.client.event.EventBus.startSection("RenderUtil.drawRect");
         try {
-            float a = ((color >> 24) & 0xFF) / 255f;
-            float r = ((color >> 16) & 0xFF) / 255f;
-            float g = ((color >> 8) & 0xFF) / 255f;
-            float b = (color & 0xFF) / 255f;
+            if (!com.hades.client.api.HadesAPI.Render.isForceRenderUtil()
+                    && com.hades.client.platform.PlatformManager.getDetectedPlatform() == com.hades.client.platform.ClientPlatform.LABYMOD && com.hades.client.util.LabyRenderer.isAvailable() && com.hades.client.util.LabyRenderer.getCurrentScreenContext() != null) {
+                com.hades.client.util.LabyRenderer.drawRect(x, y, width, height, color);
+                return;
+            }
 
-            boolean wasBlend = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_BLEND);
-            boolean wasTex2D = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+            try {
+                float a = ((color >> 24) & 0xFF) / 255f;
+                float r = ((color >> 16) & 0xFF) / 255f;
+                float g = ((color >> 8) & 0xFF) / 255f;
+                float b = (color & 0xFF) / 255f;
 
-            org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_CURRENT_BIT);
-            org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
-            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND);
-            org.lwjgl.opengl.GL11.glBlendFunc(org.lwjgl.opengl.GL11.GL_SRC_ALPHA, org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA);
-            org.lwjgl.opengl.GL11.glColor4f(r, g, b, a);
+                boolean wasBlend = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_BLEND);
+                boolean wasTex2D = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
 
-            org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
-            org.lwjgl.opengl.GL11.glVertex2f(x, y);
-            org.lwjgl.opengl.GL11.glVertex2f(x, y + height);
-            org.lwjgl.opengl.GL11.glVertex2f(x + width, y + height);
-            org.lwjgl.opengl.GL11.glVertex2f(x + width, y);
-            org.lwjgl.opengl.GL11.glEnd();
+                org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_CURRENT_BIT);
+                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND);
+                org.lwjgl.opengl.GL11.glBlendFunc(org.lwjgl.opengl.GL11.GL_SRC_ALPHA, org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA);
+                org.lwjgl.opengl.GL11.glColor4f(r, g, b, a);
 
-            org.lwjgl.opengl.GL11.glPopAttrib();
-            if (wasTex2D) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
-            if (!wasBlend) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
-        } catch (Exception ignored) {
+                org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
+                org.lwjgl.opengl.GL11.glVertex2f(x, y);
+                org.lwjgl.opengl.GL11.glVertex2f(x, y + height);
+                org.lwjgl.opengl.GL11.glVertex2f(x + width, y + height);
+                org.lwjgl.opengl.GL11.glVertex2f(x + width, y);
+                org.lwjgl.opengl.GL11.glEnd();
+
+                org.lwjgl.opengl.GL11.glPopAttrib();
+                if (wasTex2D) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+                if (!wasBlend) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
+            } catch (Exception ignored) {
+            }
+        } finally {
+            com.hades.client.event.EventBus.endSection("RenderUtil.drawRect");
         }
     }
 
     public static void drawGradientRect(float x, float y, float width, float height,
             int colorTop, int colorBottom) {
-
-        if (!com.hades.client.api.HadesAPI.Render.isForceRenderUtil()
-                && com.hades.client.platform.PlatformManager.getDetectedPlatform() == com.hades.client.platform.ClientPlatform.LABYMOD
-                && com.hades.client.util.LabyRenderer.isAvailable() && com.hades.client.util.LabyRenderer.getCurrentScreenContext() != null) {
-            com.hades.client.util.LabyRenderer.drawGradientRect(x, y, width, height, colorTop, colorBottom);
-            return;
-        }
-
+        com.hades.client.event.EventBus.startSection("RenderUtil.drawGradientRect");
         try {
-            float a1 = ((colorTop >> 24) & 0xFF) / 255f;
-            float r1 = ((colorTop >> 16) & 0xFF) / 255f;
-            float g1 = ((colorTop >> 8) & 0xFF) / 255f;
-            float b1 = (colorTop & 0xFF) / 255f;
+            if (!com.hades.client.api.HadesAPI.Render.isForceRenderUtil()
+                    && com.hades.client.platform.PlatformManager.getDetectedPlatform() == com.hades.client.platform.ClientPlatform.LABYMOD
+                    && com.hades.client.util.LabyRenderer.isAvailable() && com.hades.client.util.LabyRenderer.getCurrentScreenContext() != null) {
+                com.hades.client.util.LabyRenderer.drawGradientRect(x, y, width, height, colorTop, colorBottom);
+                return;
+            }
 
-            float a2 = ((colorBottom >> 24) & 0xFF) / 255f;
-            float r2 = ((colorBottom >> 16) & 0xFF) / 255f;
-            float g2 = ((colorBottom >> 8) & 0xFF) / 255f;
-            float b2 = (colorBottom & 0xFF) / 255f;
+            try {
+                float a1 = ((colorTop >> 24) & 0xFF) / 255f;
+                float r1 = ((colorTop >> 16) & 0xFF) / 255f;
+                float g1 = ((colorTop >> 8) & 0xFF) / 255f;
+                float b1 = (colorTop & 0xFF) / 255f;
 
-            boolean wasBlend = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_BLEND);
-            boolean wasTex2D = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+                float a2 = ((colorBottom >> 24) & 0xFF) / 255f;
+                float r2 = ((colorBottom >> 16) & 0xFF) / 255f;
+                float g2 = ((colorBottom >> 8) & 0xFF) / 255f;
+                float b2 = (colorBottom & 0xFF) / 255f;
 
-            org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_CURRENT_BIT);
-            org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
-            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND);
-            org.lwjgl.opengl.GL11.glBlendFunc(org.lwjgl.opengl.GL11.GL_SRC_ALPHA, org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA);
-            org.lwjgl.opengl.GL11.glShadeModel(org.lwjgl.opengl.GL11.GL_SMOOTH);
-            org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
+                boolean wasBlend = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_BLEND);
+                boolean wasTex2D = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
 
-            org.lwjgl.opengl.GL11.glColor4f(r1, g1, b1, a1);
-            org.lwjgl.opengl.GL11.glVertex2f(x, y);
-            org.lwjgl.opengl.GL11.glVertex2f(x + width, y);
+                org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_CURRENT_BIT);
+                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND);
+                org.lwjgl.opengl.GL11.glBlendFunc(org.lwjgl.opengl.GL11.GL_SRC_ALPHA, org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA);
+                org.lwjgl.opengl.GL11.glShadeModel(org.lwjgl.opengl.GL11.GL_SMOOTH);
+                org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
 
-            org.lwjgl.opengl.GL11.glColor4f(r2, g2, b2, a2);
-            org.lwjgl.opengl.GL11.glVertex2f(x + width, y + height);
-            org.lwjgl.opengl.GL11.glVertex2f(x, y + height);
+                org.lwjgl.opengl.GL11.glColor4f(r1, g1, b1, a1);
+                org.lwjgl.opengl.GL11.glVertex2f(x, y);
+                org.lwjgl.opengl.GL11.glVertex2f(x + width, y);
 
-            org.lwjgl.opengl.GL11.glEnd();
-            org.lwjgl.opengl.GL11.glShadeModel(org.lwjgl.opengl.GL11.GL_FLAT);
-            
-            org.lwjgl.opengl.GL11.glPopAttrib();
-            if (wasTex2D) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
-            if (!wasBlend) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
-        } catch (Exception ignored) {
+                org.lwjgl.opengl.GL11.glColor4f(r2, g2, b2, a2);
+                org.lwjgl.opengl.GL11.glVertex2f(x + width, y + height);
+                org.lwjgl.opengl.GL11.glVertex2f(x, y + height);
+
+                org.lwjgl.opengl.GL11.glEnd();
+                org.lwjgl.opengl.GL11.glShadeModel(org.lwjgl.opengl.GL11.GL_FLAT);
+                
+                org.lwjgl.opengl.GL11.glPopAttrib();
+                if (wasTex2D) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+                if (!wasBlend) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
+            } catch (Exception ignored) {
+            }
+        } finally {
+            com.hades.client.event.EventBus.endSection("RenderUtil.drawGradientRect");
         }
     }
 
@@ -468,6 +488,7 @@ public class RenderUtil {
     public static void drawRoundedRect(float x, float y, float width, float height,
             float radius, int color) {
 
+        com.hades.client.event.EventBus.startSection("RenderUtil.drawRoundedRect");
         try {
             float a = ((color >> 24) & 0xFF) / 255f;
             float r = ((color >> 16) & 0xFF) / 255f;
@@ -493,29 +514,25 @@ public class RenderUtil {
             // Top-left corner arc (180-270 degrees)
             float cx = x + radius, cy = y + radius;
             for (int i = 180; i <= 270; i += arcStep) {
-                double rad = Math.toRadians(i);
-                org.lwjgl.opengl.GL11.glVertex2f((float)(cx + Math.cos(rad) * radius), (float)(cy + Math.sin(rad) * radius));
+                org.lwjgl.opengl.GL11.glVertex2f(cx + COS_LUT[i] * radius, cy + SIN_LUT[i] * radius);
             }
 
             // Top-right corner arc (270-360 degrees)
             cx = x + width - radius; cy = y + radius;
             for (int i = 270; i <= 360; i += arcStep) {
-                double rad = Math.toRadians(i);
-                org.lwjgl.opengl.GL11.glVertex2f((float)(cx + Math.cos(rad) * radius), (float)(cy + Math.sin(rad) * radius));
+                org.lwjgl.opengl.GL11.glVertex2f(cx + COS_LUT[i] * radius, cy + SIN_LUT[i] * radius);
             }
 
             // Bottom-right corner arc (0-90 degrees)
             cx = x + width - radius; cy = y + height - radius;
             for (int i = 0; i <= 90; i += arcStep) {
-                double rad = Math.toRadians(i);
-                org.lwjgl.opengl.GL11.glVertex2f((float)(cx + Math.cos(rad) * radius), (float)(cy + Math.sin(rad) * radius));
+                org.lwjgl.opengl.GL11.glVertex2f(cx + COS_LUT[i] * radius, cy + SIN_LUT[i] * radius);
             }
 
             // Bottom-left corner arc (90-180 degrees)
             cx = x + radius; cy = y + height - radius;
             for (int i = 90; i <= 180; i += arcStep) {
-                double rad = Math.toRadians(i);
-                org.lwjgl.opengl.GL11.glVertex2f((float)(cx + Math.cos(rad) * radius), (float)(cy + Math.sin(rad) * radius));
+                org.lwjgl.opengl.GL11.glVertex2f(cx + COS_LUT[i] * radius, cy + SIN_LUT[i] * radius);
             }
 
             org.lwjgl.opengl.GL11.glEnd();
@@ -527,6 +544,8 @@ public class RenderUtil {
             if (!wasBlend) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
         } catch (Exception e) {
             com.hades.client.util.HadesLogger.get().error("drawRoundedRect failed", e);
+        } finally {
+            com.hades.client.event.EventBus.endSection("RenderUtil.drawRoundedRect");
         }
     }
 
@@ -564,15 +583,17 @@ public class RenderUtil {
             org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_TRIANGLE_FAN); // GL_TRIANGLE_FAN
             org.lwjgl.opengl.GL11.glVertex2f(cx, cy); // center vertex
             for (int i = startAngle; i <= endAngle; i += 3) {
-                double rad = Math.toRadians(i);
-                float x1 = (float) (cx + Math.cos(rad) * radius);
-                float y1 = (float) (cy + Math.sin(rad) * radius);
+                int index = (i > 360) ? i % 360 : (i < 0 ? (i % 360) + 360 : i);
+                if (i == 360) index = 360;
+                float x1 = cx + COS_LUT[index] * radius;
+                float y1 = cy + SIN_LUT[index] * radius;
                 org.lwjgl.opengl.GL11.glVertex2f(x1, y1);
             }
             // Ensure we hit the exact end angle
             if ((endAngle - startAngle) % 3 != 0) {
-                double rad = Math.toRadians(endAngle);
-                org.lwjgl.opengl.GL11.glVertex2f((float)(cx + Math.cos(rad) * radius), (float)(cy + Math.sin(rad) * radius));
+                int index = (endAngle > 360) ? endAngle % 360 : (endAngle < 0 ? (endAngle % 360) + 360 : endAngle);
+                if (endAngle == 360) index = 360;
+                org.lwjgl.opengl.GL11.glVertex2f(cx + COS_LUT[index] * radius, cy + SIN_LUT[index] * radius);
             }
             org.lwjgl.opengl.GL11.glEnd();
         } catch (Exception e) {
@@ -680,13 +701,16 @@ public class RenderUtil {
             org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
             for (int i = startAngle; i < endAngle; i += 5) {
                 int nextI = Math.min(i + 5, endAngle);
-                double rad1 = Math.toRadians(i);
-                double rad2 = Math.toRadians(nextI);
                 
-                float cos1 = (float) Math.cos(rad1);
-                float sin1 = (float) Math.sin(rad1);
-                float cos2 = (float) Math.cos(rad2);
-                float sin2 = (float) Math.sin(rad2);
+                int index1 = (i > 360) ? i % 360 : (i < 0 ? (i % 360) + 360 : i);
+                if (i == 360) index1 = 360;
+                int index2 = (nextI > 360) ? nextI % 360 : (nextI < 0 ? (nextI % 360) + 360 : nextI);
+                if (nextI == 360) index2 = 360;
+
+                float cos1 = COS_LUT[index1];
+                float sin1 = SIN_LUT[index1];
+                float cos2 = COS_LUT[index2];
+                float sin2 = SIN_LUT[index2];
 
                 // Vertex 1: Inner (start angle)
                 org.lwjgl.opengl.GL11.glColor4f(r1, g1, b1, a1);
@@ -1166,6 +1190,49 @@ public class RenderUtil {
         putVertex3DInWorld(minX, maxY, maxZ);
 
         org.lwjgl.opengl.GL11.glEnd();
+    }
+
+    // Global states storage for begin/end calls
+    private static boolean wasDepthTestESP;
+    private static boolean wasBlendESP;
+    private static boolean wasTexture2DESP;
+    private static boolean wasLineSmoothESP;
+    private static boolean wasDepthMaskESP;
+
+    public static void beginOutlinedESP() {
+        wasDepthTestESP = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+        wasBlendESP = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_BLEND);
+        wasTexture2DESP = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+        wasLineSmoothESP = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_LINE_SMOOTH);
+        wasDepthMaskESP = org.lwjgl.opengl.GL11.glGetBoolean(org.lwjgl.opengl.GL11.GL_DEPTH_WRITEMASK);
+
+        org.lwjgl.opengl.GL11.glPushMatrix();
+        org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND);
+        org.lwjgl.opengl.GL11.glBlendFunc(770, 771);
+        org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+        org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_LINE_SMOOTH);
+        org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+        org.lwjgl.opengl.GL11.glDepthMask(false);
+        org.lwjgl.opengl.GL11.glLineWidth(2f);
+    }
+
+    public static void endOutlinedESP() {
+        if (wasDepthTestESP) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST); else org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+        if (wasBlendESP) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_BLEND); else org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
+        if (wasTexture2DESP) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D); else org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_TEXTURE_2D);
+        if (wasLineSmoothESP) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_LINE_SMOOTH); else org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_LINE_SMOOTH);
+        org.lwjgl.opengl.GL11.glDepthMask(wasDepthMaskESP);
+        org.lwjgl.opengl.GL11.glPopMatrix();
+    }
+
+    public static void drawBatchedOutlinedEntityESP(double x, double y, double z, double width, double height, int color) {
+        float a = ((color >> 24) & 0xFF) / 255f;
+        float r = ((color >> 16) & 0xFF) / 255f;
+        float g = ((color >> 8) & 0xFF) / 255f;
+        float b = (color & 0xFF) / 255f;
+        org.lwjgl.opengl.GL11.glColor4f(r, g, b, a);
+        double halfW = width / 2.0;
+        drawOutlinedBoundingBox(x - halfW, y, z - halfW, x + halfW, y + height, z + halfW);
     }
 
     public static void drawOutlinedEntityESP(double x, double y, double z, double width, double height, int color) {

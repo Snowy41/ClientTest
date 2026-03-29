@@ -109,31 +109,35 @@ public class TargetVisuals extends Module {
         org.lwjgl.opengl.GL11.glShadeModel(org.lwjgl.opengl.GL11.GL_SMOOTH); // 7425
 
         // ── Draw the Jello ring ──
-        for (int deg = 0; deg < 360; deg += 5) {
-            // Hades orange color
-            float[] color = getHadesColor();
+        float[] color = getHadesColor();
 
-            double x1 = x - Math.sin(deg * Math.PI / 180.0) * radius;
-            double z1 = z + Math.cos(deg * Math.PI / 180.0) * radius;
-            double x2 = x - Math.sin((deg - 5) * Math.PI / 180.0) * radius;
-            double z2 = z + Math.cos((deg - 5) * Math.PI / 180.0) * radius;
+        org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUAD_STRIP);
+        for (int deg = 0; deg <= 360; deg += 5) {
+            double rad = deg * Math.PI / 180.0;
+            double x1 = x - Math.sin(rad) * radius;
+            double z1 = z + Math.cos(rad) * radius;
 
-            // Gradient quad: transparent top → colored bottom
-            org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
+            // Top transparent vertex
             org.lwjgl.opengl.GL11.glColor4f(color[0], color[1], color[2], 0.0f);
             org.lwjgl.opengl.GL11.glVertex3d(x1, y + eased, z1);
-            org.lwjgl.opengl.GL11.glVertex3d(x2, y + eased, z2);
+            
+            // Bottom solid vertex
             org.lwjgl.opengl.GL11.glColor4f(color[0], color[1], color[2], 1.0f);
-            org.lwjgl.opengl.GL11.glVertex3d(x2, y, z2);
             org.lwjgl.opengl.GL11.glVertex3d(x1, y, z1);
-            org.lwjgl.opengl.GL11.glEnd();
-
-            // Bottom edge line for crispness
-            org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_LINE_LOOP);
-            org.lwjgl.opengl.GL11.glVertex3d(x2, y, z2);
-            org.lwjgl.opengl.GL11.glVertex3d(x1, y, z1);
-            org.lwjgl.opengl.GL11.glEnd();
         }
+        org.lwjgl.opengl.GL11.glEnd();
+
+        // Bottom edge line for crispness
+        org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_LINE_LOOP);
+        for (int deg = 0; deg < 360; deg += 5) {
+            double rad = deg * Math.PI / 180.0;
+            double x1 = x - Math.sin(rad) * radius;
+            double z1 = z + Math.cos(rad) * radius;
+
+            org.lwjgl.opengl.GL11.glColor4f(color[0], color[1], color[2], 1.0f);
+            org.lwjgl.opengl.GL11.glVertex3d(x1, y, z1);
+        }
+        org.lwjgl.opengl.GL11.glEnd();
 
         // ── Restore GL state ──
         org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE);

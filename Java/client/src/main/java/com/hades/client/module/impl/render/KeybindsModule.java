@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 public class KeybindsModule extends Module {
 
     private final ModeSetting colorTheme = new ModeSetting("Color Theme", "Orange", "Orange", "Rainbow", "Fade", "White");
+    public final ModeSetting alignment = new ModeSetting("Alignment", "Left", "Right", "Left");
     private final BooleanSetting blurBackground = new BooleanSetting("Blur Background", true);
     private final NumberSetting blurPasses = new NumberSetting("Blur Passes", 2, 1, 3, 1);
 
@@ -30,6 +31,7 @@ public class KeybindsModule extends Module {
 
     public KeybindsModule() {
         super("KeybindsHUD", "Displays active module keybinds", Category.HUD, 0);
+        this.register(alignment);
         this.register(colorTheme);
         this.register(blurBackground);
         this.register(blurPasses);
@@ -89,6 +91,11 @@ public class KeybindsModule extends Module {
             if (w > maxContentWidth) maxContentWidth = w;
         }
 
+        float totalHeightHeight = rowHeight - 1f + (sorted.size() > 0 ? (gap + rowHeight - 1f) + (rowHeight + gap) * (sorted.size() - 1) : 0);
+        float totalBackingHeight = (rowHeight + gap) * sorted.size() + rowHeight - 1f;
+
+        // --- SINGLE BATCHED BLUR ---
+        // --- Draw Header Background ---
         HadesAPI.Render.drawRoundedShadow(currentX, currentY, maxContentWidth, rowHeight - 1f, pillRadius, 5f);
         if (blurBackground.getValue()) {
             try {
@@ -105,8 +112,16 @@ public class KeybindsModule extends Module {
                     pillRadius, HadesAPI.Render.colorWithAlpha(Theme.WINDOW_BG, 200));
         }
 
-        HadesAPI.Render.drawRoundedRect(currentX, currentY + 2f, 2f, rowHeight - 5f, 1f, getColor(0, 1));
-        HadesAPI.Render.drawString(headerText, currentX + paddingX + 2f, currentY + paddingY, Theme.TEXT_PRIMARY, 15f, true, false, true);
+        boolean isRightAligned = alignment.getValue().equals("Right");
+
+        if (isRightAligned) {
+            HadesAPI.Render.drawRoundedRect(currentX + maxContentWidth - 2f, currentY + 2f, 2f, rowHeight - 5f, 1f, getColor(0, 1));
+            float titleWidth = HadesAPI.Render.getStringWidth(headerText, 15f, true, false);
+            HadesAPI.Render.drawString(headerText, currentX + maxContentWidth - titleWidth - paddingX - 2f, currentY + paddingY, Theme.TEXT_PRIMARY, 15f, true, false, true);
+        } else {
+            HadesAPI.Render.drawRoundedRect(currentX, currentY + 2f, 2f, rowHeight - 5f, 1f, getColor(0, 1));
+            HadesAPI.Render.drawString(headerText, currentX + paddingX + 2f, currentY + paddingY, Theme.TEXT_PRIMARY, 15f, true, false, true);
+        }
         
         float drawY = currentY + rowHeight + gap;
 
@@ -122,6 +137,7 @@ public class KeybindsModule extends Module {
             int accentColor = getColor(i + 1, sorted.size() + 1);
 
             HadesAPI.Render.drawRoundedShadow(renderX, safeY, maxContentWidth, rowHeight - 1f, pillRadius, 5f);
+            
             if (blurBackground.getValue()) {
                 try {
                     int tint = HadesAPI.Render.colorWithAlpha(0xFF0A0A0C, 40); 
@@ -137,16 +153,28 @@ public class KeybindsModule extends Module {
                         pillRadius, HadesAPI.Render.colorWithAlpha(Theme.WINDOW_BG, 200));
             }
 
-            // Text
-            float nameWidth = HadesAPI.Render.getStringWidth(module.getName(), fontSize, false, false);
-            HadesAPI.Render.drawString(module.getName(), renderX + paddingX, safeY + paddingY,
-                    Theme.TEXT_SECONDARY, fontSize, false, false, true); // Module Name
-            
-            // Key Text (right aligned)
-            String keyStr = "[" + keyName + "]";
-            float keyWidth = HadesAPI.Render.getStringWidth(keyStr, fontSize, false, false);
-            HadesAPI.Render.drawString(keyStr, renderX + maxContentWidth - keyWidth - paddingX, safeY + paddingY,
-                    module.isEnabled() ? accentColor : Theme.TEXT_MUTED, fontSize, false, false, true);
+            if (isRightAligned) {
+                // Key Text (left aligned)
+                String keyStr = "[" + keyName + "]";
+                HadesAPI.Render.drawString(keyStr, renderX + paddingX, safeY + paddingY,
+                        module.isEnabled() ? accentColor : Theme.TEXT_MUTED, fontSize, false, false, true);
+
+                // Module Name (right aligned)
+                float nameWidth = HadesAPI.Render.getStringWidth(module.getName(), fontSize, false, false);
+                HadesAPI.Render.drawString(module.getName(), renderX + maxContentWidth - nameWidth - paddingX, safeY + paddingY,
+                        Theme.TEXT_SECONDARY, fontSize, false, false, true);
+            } else {
+                // Text
+                float nameWidth = HadesAPI.Render.getStringWidth(module.getName(), fontSize, false, false);
+                HadesAPI.Render.drawString(module.getName(), renderX + paddingX, safeY + paddingY,
+                        Theme.TEXT_SECONDARY, fontSize, false, false, true); // Module Name
+                
+                // Key Text (right aligned)
+                String keyStr = "[" + keyName + "]";
+                float keyWidth = HadesAPI.Render.getStringWidth(keyStr, fontSize, false, false);
+                HadesAPI.Render.drawString(keyStr, renderX + maxContentWidth - keyWidth - paddingX, safeY + paddingY,
+                        module.isEnabled() ? accentColor : Theme.TEXT_MUTED, fontSize, false, false, true);
+            }
 
             drawY += rowHeight + gap;
         }

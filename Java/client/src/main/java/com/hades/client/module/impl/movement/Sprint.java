@@ -27,7 +27,7 @@ public class Sprint extends Module {
 
 
 
-    @EventHandler
+    @EventHandler(priority = -1)
     public void onTick(TickEvent event) {
         if (HadesAPI.Player.isNull()) return;
 

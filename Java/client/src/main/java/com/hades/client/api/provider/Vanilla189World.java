@@ -18,6 +18,7 @@ public class Vanilla189World implements IWorld {
 
     private final Class<?> minecraftClass;
     private final Method getMinecraftMethod;
+    private static Object mcInstance;
     private final Field theWorldField;
     
     private Constructor<?> blockPosConstructor;
@@ -34,10 +35,11 @@ public class Vanilla189World implements IWorld {
     private Class<?> mopClass;
     private Field hitVecField, sideHitField;
     private Method rayTraceBlocksMethod;
-    private Class<?> aabbClass;
-    private Method expandMethod, calcInterceptMethod;
-    private Method getEntityBBMethod;
-    private Class<?> entityLivingClass;
+    
+    private static Field loadedEntityListField;
+    private static Field loadedTileEntityListField;
+    private static boolean listFieldsCached = false;
+
 
     public Vanilla189World() {
         minecraftClass = ReflectionUtil.findClass("net.minecraft.client.Minecraft", "ave");
@@ -106,26 +108,20 @@ public class Vanilla189World implements IWorld {
             rayTraceBlocksMethod = ReflectionUtil.findMethod(worldClass, new String[]{"a", "rayTraceBlocks", "func_72933_a"}, vec3Class, vec3Class);
         }
 
-        aabbClass = ReflectionUtil.findClass("net.minecraft.util.AxisAlignedBB", "aug");
-        if (aabbClass != null) {
-            expandMethod = ReflectionUtil.findMethod(aabbClass, new String[]{"b", "expand", "func_72314_b"}, double.class, double.class, double.class);
-            if (vec3Class != null) {
-                calcInterceptMethod = ReflectionUtil.findMethod(aabbClass, new String[]{"a", "calculateIntercept", "func_72327_a"}, vec3Class, vec3Class);
-            }
+        if (worldClass != null && !listFieldsCached) {
+            loadedEntityListField = ReflectionUtil.findField(worldClass, "j", "loadedEntityList", "field_72996_f");
+            loadedTileEntityListField = ReflectionUtil.findField(worldClass, "h", "loadedTileEntityList", "field_147482_g");
+            listFieldsCached = true;
         }
 
-        Class<?> entityClass = ReflectionUtil.findClass("net.minecraft.entity.Entity", "pk");
-        if (entityClass != null) {
-            getEntityBBMethod = ReflectionUtil.findMethod(entityClass, new String[]{"aB", "getEntityBoundingBox", "func_174813_aQ"});
-        }
-
-        entityLivingClass = ReflectionUtil.findClass("net.minecraft.entity.EntityLivingBase", "pr");
     }
 
     private Object getWorld() {
         try {
-            Object mc = getMinecraftMethod != null ? getMinecraftMethod.invoke(null) : null;
-            return mc != null && theWorldField != null ? theWorldField.get(mc) : null;
+            if (mcInstance == null && getMinecraftMethod != null) {
+                mcInstance = getMinecraftMethod.invoke(null);
+            }
+            return mcInstance != null && theWorldField != null ? theWorldField.get(mcInstance) : null;
         } catch (Exception e) {
             return null;
         }
@@ -157,14 +153,18 @@ public class Vanilla189World implements IWorld {
         return null;
     }
 
-    private final java.util.Map<Object, IEntity> entityCache = new java.util.WeakHashMap<>();
     private final java.util.Map<Object, ITileEntity> tileEntityCache = new java.util.WeakHashMap<>();
+    private java.util.Map<Object, IEntity> entityCache = new java.util.IdentityHashMap<>();
     private Object lastRawWorld = null;
 
     public void clearCaches() {
-        entityCache.clear();
         tileEntityCache.clear();
+        entityCache.clear();
     }
+
+    // Per-tick cache for getLoadedEntities() — avoids rebuilding wrapper list on every call
+    private List<IEntity> cachedEntityList = Collections.emptyList();
+    private long lastEntityCacheTick = -1;
 
     @Override
     @SuppressWarnings("unchecked")
@@ -176,24 +176,37 @@ public class Vanilla189World implements IWorld {
             if (w != lastRawWorld) {
                 clearCaches();
                 lastRawWorld = w;
+                lastEntityCacheTick = -1; // Force rebuild
                 // Hook to clear TargetManager's cross-world caches too
                 com.hades.client.combat.TargetManager.getInstance().onWorldChange();
             }
 
-            Field f = ReflectionUtil.findField(w.getClass(), "j", "loadedEntityList", "field_72996_f");
-            if (f == null) return Collections.emptyList();
-            List<Object> rawList = (List<Object>) f.get(w);
+            // Only rebuild wrapper list once per tick (~50ms)
+            long currentTick = System.currentTimeMillis() / 50;
+            if (currentTick == lastEntityCacheTick) {
+                return cachedEntityList;
+            }
+            lastEntityCacheTick = currentTick;
+
+            if (loadedEntityListField == null) return Collections.emptyList();
+            List<Object> rawList = (List<Object>) loadedEntityListField.get(w);
             if (rawList == null) return Collections.emptyList();
             
+            java.util.Map<Object, IEntity> nextCache = new java.util.IdentityHashMap<>(rawList.size());
             List<IEntity> wrappedList = new ArrayList<>(rawList.size());
+            
             for (Object raw : rawList) {
                 IEntity wrapper = entityCache.get(raw);
                 if (wrapper == null) {
                     wrapper = new Vanilla189Entity(raw);
-                    entityCache.put(raw, wrapper);
                 }
+                nextCache.put(raw, wrapper);
                 wrappedList.add(wrapper);
             }
+            
+            // Atomically upgrade the cache to strictly only what physically exists this tick
+            this.entityCache = nextCache;
+            this.cachedEntityList = wrappedList;
             return wrappedList;
         } catch (Exception e) {
             return Collections.emptyList();
@@ -206,9 +219,8 @@ public class Vanilla189World implements IWorld {
         try {
             Object w = getWorld();
             if (w == null) return Collections.emptyList();
-            Field f = ReflectionUtil.findField(w.getClass(), "h", "loadedTileEntityList", "field_147482_g");
-            if (f == null) return Collections.emptyList();
-            List<Object> rawList = (List<Object>) f.get(w);
+            if (loadedTileEntityListField == null) return Collections.emptyList();
+            List<Object> rawList = (List<Object>) loadedTileEntityListField.get(w);
             if (rawList == null) return Collections.emptyList();
             
             List<ITileEntity> wrappedList = new ArrayList<>(rawList.size());
@@ -315,43 +327,69 @@ public class Vanilla189World implements IWorld {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public TraceResult checkEntityIntercept(double x1, double y1, double z1, double x2, double y2, double z2, Object excludeRaw) {
-        if (vec3Ctor == null || calcInterceptMethod == null || expandMethod == null || getEntityBBMethod == null || hitVecField == null || vxF == null) {
-            return TraceResult.miss();
-        }
-        try {
-            Object rawWorld = getWorld();
-            if (rawWorld == null) return TraceResult.miss();
+        TraceResult closest = null;
+        double minDistanceSq = Double.MAX_VALUE;
 
-            Object startVec = vec3Ctor.newInstance(x1, y1, z1);
-            Object endVec = vec3Ctor.newInstance(x2, y2, z2);
+        double dirX = x2 - x1;
+        double dirY = y2 - y1;
+        double dirZ = z2 - z1;
+        double segmentLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+        if (segmentLen == 0) return TraceResult.miss();
 
-            Field loadedEntityListField = ReflectionUtil.findField(rawWorld.getClass(), "j", "loadedEntityList", "field_72996_f");
-            if (loadedEntityListField == null) return TraceResult.miss();
-            List<Object> entities = (List<Object>) loadedEntityListField.get(rawWorld);
-            if (entities == null) return TraceResult.miss();
+        for (com.hades.client.api.interfaces.IEntity entity : getLoadedEntities()) {
+            if (entity.getRaw() == null || entity.getRaw() == excludeRaw) continue;
 
-            for (Object rawEnt : entities) {
-                if (rawEnt == excludeRaw) continue;
-                if (entityLivingClass != null && !entityLivingClass.isInstance(rawEnt)) continue;
-                try {
-                    Object bb = getEntityBBMethod.invoke(rawEnt);
-                    if (bb == null) continue;
-                    Object expandedBB = expandMethod.invoke(bb, 0.3, 0.3, 0.3);
-                    Object intercept = calcInterceptMethod.invoke(expandedBB, startVec, endVec);
-                    if (intercept != null) {
-                        Object hitVec = hitVecField.get(intercept);
-                        if (hitVec != null) {
-                            double hx = vxF.getDouble(hitVec);
-                            double hy = vyF.getDouble(hitVec);
-                            double hz = vzF.getDouble(hitVec);
-                            return new TraceResult(true, hx, hy, hz, "NONE", true);
-                        }
-                    }
-                } catch (Exception ignored) {}
+            // Projectile AABB expansion is canonically 0.3f for arrows/snowballs in Vanilla
+            double border = 0.3; 
+            double w = (entity.getWidth() / 2.0) + border;
+            
+            double minX = entity.getX() - w;
+            double maxX = entity.getX() + w;
+            double minY = entity.getY() - border; 
+            double maxY = entity.getY() + entity.getHeight() + border;
+            double minZ = entity.getZ() - w;
+            double maxZ = entity.getZ() + w;
+
+            // Slab Method for Line-AABB intersection
+            double tmin = -Double.MAX_VALUE;
+            double tmax = Double.MAX_VALUE;
+
+            if (dirX != 0.0) {
+                double tx1 = (minX - x1) / dirX;
+                double tx2 = (maxX - x1) / dirX;
+                tmin = Math.max(tmin, Math.min(tx1, tx2));
+                tmax = Math.min(tmax, Math.max(tx1, tx2));
+            } else if (x1 < minX || x1 > maxX) continue;
+
+            if (dirY != 0.0) {
+                double ty1 = (minY - y1) / dirY;
+                double ty2 = (maxY - y1) / dirY;
+                tmin = Math.max(tmin, Math.min(ty1, ty2));
+                tmax = Math.min(tmax, Math.max(ty1, ty2));
+            } else if (y1 < minY || y1 > maxY) continue;
+
+            if (dirZ != 0.0) {
+                double tz1 = (minZ - z1) / dirZ;
+                double tz2 = (maxZ - z1) / dirZ;
+                tmin = Math.max(tmin, Math.min(tz1, tz2));
+                tmax = Math.min(tmax, Math.max(tz1, tz2));
+            } else if (z1 < minZ || z1 > maxZ) continue;
+
+            // Check if intersection occurs within the bounds of this single tick's line segment [0, 1]
+            if (tmax >= tmin && tmin >= 0 && tmin <= 1) {
+                double hitX = x1 + dirX * tmin;
+                double hitY = y1 + dirY * tmin;
+                double hitZ = z1 + dirZ * tmin;
+
+                double dSq = (hitX - x1)*(hitX - x1) + (hitY - y1)*(hitY - y1) + (hitZ - z1)*(hitZ - z1);
+                if (dSq < minDistanceSq) {
+                    minDistanceSq = dSq;
+                    closest = new TraceResult(true, hitX, hitY, hitZ, "NONE", true);
+                }
             }
-        } catch (Exception ignored) {}
-        return TraceResult.miss();
+        }
+
+        return closest != null ? closest : TraceResult.miss();
     }
 }

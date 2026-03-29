@@ -62,7 +62,7 @@ public class HudAvoidanceUtil {
 
     private static List<float[]> getWidgetRects(float screenWidth, float screenHeight) {
         long now = System.currentTimeMillis();
-        if (now - lastCacheTime < 50 && !cachedRects.isEmpty()) {
+        if (now - lastCacheTime < 50) {
             return cachedRects;
         }
         lastCacheTime = now;

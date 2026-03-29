@@ -114,14 +114,24 @@ public class RotationUtil {
         return Math.abs(wrapAngle(a - b));
     }
 
+    private static java.lang.reflect.Method cachedEyeHeightMethod;
+    private static boolean eyeHeightMethodCached = false;
+
     private static double getEntityEyeHeight(IEntity entity) {
         try {
-            java.lang.reflect.Method m = entity.getRaw().getClass().getMethod("getEyeHeight");
-            m.setAccessible(true);
-            return (float) m.invoke(entity.getRaw());
+            if (!eyeHeightMethodCached) {
+                eyeHeightMethodCached = true;
+                try {
+                    cachedEyeHeightMethod = entity.getRaw().getClass().getMethod("getEyeHeight");
+                    cachedEyeHeightMethod.setAccessible(true);
+                } catch (Exception ignored) {}
+            }
+            if (cachedEyeHeightMethod != null) {
+                return (float) cachedEyeHeightMethod.invoke(entity.getRaw());
+            }
         } catch (Exception e) {
-            return 1.62; // default player eye height
         }
+        return 1.62; // default player eye height
     }
 
     /**
@@ -136,61 +146,66 @@ public class RotationUtil {
             double minX, double minY, double minZ,
             double maxX, double maxY, double maxZ,
             double reach) {
-        float f1 = (float) Math.cos(-yaw * 0.017453292F - (float) Math.PI);
-        float f2 = (float) Math.sin(-yaw * 0.017453292F - (float) Math.PI);
-        float f3 = (float) -Math.cos(-pitch * 0.017453292F);
-        float f4 = (float) Math.sin(-pitch * 0.017453292F);
+        com.hades.client.event.EventBus.startSection("RotationUtil");
+        try {
+            float f1 = (float) Math.cos(-yaw * 0.017453292F - (float) Math.PI);
+            float f2 = (float) Math.sin(-yaw * 0.017453292F - (float) Math.PI);
+            float f3 = (float) -Math.cos(-pitch * 0.017453292F);
+            float f4 = (float) Math.sin(-pitch * 0.017453292F);
 
-        double dirX = f2 * f3;
-        double dirY = f4;
-        double dirZ = f1 * f3;
+            double dirX = f2 * f3;
+            double dirY = f4;
+            double dirZ = f1 * f3;
 
-        // Ensure division by zero doesn't cause infinity issues
-        if (dirX == 0)
-            dirX = 1e-5;
-        if (dirY == 0)
-            dirY = 1e-5;
-        if (dirZ == 0)
-            dirZ = 1e-5;
+            // Ensure division by zero doesn't cause infinity issues
+            if (dirX == 0)
+                dirX = 1e-5;
+            if (dirY == 0)
+                dirY = 1e-5;
+            if (dirZ == 0)
+                dirZ = 1e-5;
 
-        double tmin = (minX - eyeX) / dirX;
-        double tmax = (maxX - eyeX) / dirX;
-        if (tmin > tmax) {
-            double tmp = tmin;
-            tmin = tmax;
-            tmax = tmp;
+            double tmin = (minX - eyeX) / dirX;
+            double tmax = (maxX - eyeX) / dirX;
+            if (tmin > tmax) {
+                double tmp = tmin;
+                tmin = tmax;
+                tmax = tmp;
+            }
+
+            double tymin = (minY - eyeY) / dirY;
+            double tymax = (maxY - eyeY) / dirY;
+            if (tymin > tymax) {
+                double tmp = tymin;
+                tymin = tymax;
+                tymax = tmp;
+            }
+
+            if ((tmin > tymax) || (tymin > tmax))
+                return false;
+
+            if (tymin > tmin)
+                tmin = tymin;
+            if (tymax < tmax)
+                tmax = tymax;
+
+            double tzmin = (minZ - eyeZ) / dirZ;
+            double tzmax = (maxZ - eyeZ) / dirZ;
+            if (tzmin > tzmax) {
+                double tmp = tzmin;
+                tzmin = tzmax;
+                tzmax = tmp;
+            }
+
+            if ((tmin > tzmax) || (tzmin > tmax))
+                return false;
+            if (tzmin > tmin)
+                tmin = tzmin;
+
+            return tmin >= 0 && tmin <= reach;
+        } finally {
+            com.hades.client.event.EventBus.endSection("RotationUtil");
         }
-
-        double tymin = (minY - eyeY) / dirY;
-        double tymax = (maxY - eyeY) / dirY;
-        if (tymin > tymax) {
-            double tmp = tymin;
-            tymin = tymax;
-            tymax = tmp;
-        }
-
-        if ((tmin > tymax) || (tymin > tmax))
-            return false;
-
-        if (tymin > tmin)
-            tmin = tymin;
-        if (tymax < tmax)
-            tmax = tymax;
-
-        double tzmin = (minZ - eyeZ) / dirZ;
-        double tzmax = (maxZ - eyeZ) / dirZ;
-        if (tzmin > tzmax) {
-            double tmp = tzmin;
-            tzmin = tzmax;
-            tzmax = tmp;
-        }
-
-        if ((tmin > tzmax) || (tzmin > tmax))
-            return false;
-        if (tzmin > tmin)
-            tmin = tzmin;
-
-        return tmin >= 0 && tmin <= reach;
     }
 
     /**
@@ -201,47 +216,51 @@ public class RotationUtil {
     public static float[] faceEntityCustom(IEntity entity, float yawSpeed, float pitchSpeed,
             float currentYaw, float currentPitch,
             boolean intave) {
+        com.hades.client.event.EventBus.startSection("RotationUtil");
+        try {
+            double ex = entity.getX();
+            double ey = entity.getY() + getEntityEyeHeight(entity);
+            double ez = entity.getZ();
 
-        double ex = entity.getX();
-        double ey = entity.getY() + getEntityEyeHeight(entity);
-        double ez = entity.getZ();
+            // Intentionally no target prediction interpolation here.
+            // GrimAC uses strict lag-compensated backtracking based on transaction pings.
+            // The entity's current visual getX() perfectly aligns with the server's tracked
+            // bounding box for our tick. Predicting into the future causes the ray to fall
+            // outside the bounding box on the server, causing Hitbox flags.
+            // BestHit Vec (Clamp to expanded AABB constraints)
+            double actualEntityY = ey - getEntityEyeHeight(entity);
+            double[] best = getBestHitVec(entity, ex, actualEntityY, ez);
+            ex = best[0];
+            ey = best[1];
+            ez = best[2];
 
-        // Intentionally no target prediction interpolation here.
-        // GrimAC uses strict lag-compensated backtracking based on transaction pings.
-        // The entity's current visual getX() perfectly aligns with the server's tracked
-        // bounding box for our tick. Predicting into the future causes the ray to fall
-        // outside the bounding box on the server, causing Hitbox flags.
-        // BestHit Vec (Clamp to expanded AABB constraints)
-        double actualEntityY = ey - getEntityEyeHeight(entity);
-        double[] best = getBestHitVec(entity, ex, actualEntityY, ez);
-        ex = best[0];
-        ey = best[1];
-        ez = best[2];
+            // RayTrace Heuristics Offset
+            double[] xyz = applyHeuristics(entity, new double[] { ex, ey, ez });
+            ex = xyz[0];
+            ey = xyz[1];
+            ez = xyz[2];
 
-        // RayTrace Heuristics Offset
-        double[] xyz = applyHeuristics(entity, new double[] { ex, ey, ez });
-        ex = xyz[0];
-        ey = xyz[1];
-        ez = xyz[2];
+            double diffX = ex - HadesAPI.player.getX();
+            double diffY = ey - (HadesAPI.player.getY() + 1.62); // 1.62 = eyeHeight
+            double diffZ = ez - HadesAPI.player.getZ();
 
-        double diffX = ex - HadesAPI.player.getX();
-        double diffY = ey - (HadesAPI.player.getY() + 1.62); // 1.62 = eyeHeight
-        double diffZ = ez - HadesAPI.player.getZ();
+            float calcYaw = (float) (Math.atan2(diffZ, diffX) * 180.0 / Math.PI - 90.0);
+            float calcPitch = (float) -(Math.atan2(diffY, Math.sqrt(diffX * diffX + diffZ * diffZ)) * 180.0 / Math.PI);
 
-        float calcYaw = (float) (Math.atan2(diffZ, diffX) * 180.0 / Math.PI - 90.0);
-        float calcPitch = (float) -(Math.atan2(diffY, Math.sqrt(diffX * diffX + diffZ * diffZ)) * 180.0 / Math.PI);
+            float yaw = updateRotationStatic(currentYaw, calcYaw, yawSpeed);
+            float pitch = updateRotationStatic(currentPitch, calcPitch, pitchSpeed);
 
-        float yaw = updateRotationStatic(currentYaw, calcYaw, yawSpeed);
-        float pitch = updateRotationStatic(currentPitch, calcPitch, pitchSpeed);
+            // Mathematical Jitter Matrix (Polar ML / Intave Crypta Engine Bypass)
+            float randomStrength = 0.08f;
+            yaw += (float) (intave ? (MathUtil.nextSecureFloat(1.0, 2.0) * Math.sin(pitch * Math.PI) * randomStrength)
+                    : (MathUtil.nextGaussian() * randomStrength));
+            pitch += (float) (intave ? (MathUtil.nextSecureFloat(1.0, 2.0) * Math.sin(yaw * Math.PI) * randomStrength)
+                    : (MathUtil.nextGaussian() * randomStrength));
 
-        // Mathematical Jitter Matrix (Polar ML / Intave Crypta Engine Bypass)
-        float randomStrength = 0.08f;
-        yaw += (float) (intave ? (MathUtil.nextSecureFloat(1.0, 2.0) * Math.sin(pitch * Math.PI) * randomStrength)
-                : (MathUtil.nextGaussian() * randomStrength));
-        pitch += (float) (intave ? (MathUtil.nextSecureFloat(1.0, 2.0) * Math.sin(yaw * Math.PI) * randomStrength)
-                : (MathUtil.nextGaussian() * randomStrength));
-
-        return applyGCD(yaw, pitch, currentYaw, currentPitch);
+            return applyGCD(yaw, pitch, currentYaw, currentPitch);
+        } finally {
+            com.hades.client.event.EventBus.endSection("RotationUtil");
+        }
     }
 
     /**
@@ -250,36 +269,41 @@ public class RotationUtil {
      */
     public static float[] faceEntityClean(IEntity entity, float yawSpeed, float pitchSpeed,
             float currentYaw, float currentPitch) {
-        double ex = entity.getX();
-        double ey = entity.getY() + getEntityEyeHeight(entity);
-        double ez = entity.getZ();
+        com.hades.client.event.EventBus.startSection("RotationUtil");
+        try {
+            double ex = entity.getX();
+            double ey = entity.getY() + getEntityEyeHeight(entity);
+            double ez = entity.getZ();
 
-        double actualEntityY = ey - getEntityEyeHeight(entity);
-        double[] best = getBestHitVec(entity, ex, actualEntityY, ez);
-        ex = best[0];
-        ey = best[1];
-        ez = best[2];
+            double actualEntityY = ey - getEntityEyeHeight(entity);
+            double[] best = getBestHitVec(entity, ex, actualEntityY, ez);
+            ex = best[0];
+            ey = best[1];
+            ez = best[2];
 
-        double[] xyz = applyHeuristics(entity, new double[] { ex, ey, ez });
-        ex = xyz[0];
-        ey = xyz[1];
-        ez = xyz[2];
+            double[] xyz = applyHeuristics(entity, new double[] { ex, ey, ez });
+            ex = xyz[0];
+            ey = xyz[1];
+            ez = xyz[2];
 
-        double diffX = ex - HadesAPI.player.getX();
-        double diffY = ey - (HadesAPI.player.getY() + 1.62);
-        double diffZ = ez - HadesAPI.player.getZ();
+            double diffX = ex - HadesAPI.player.getX();
+            double diffY = ey - (HadesAPI.player.getY() + 1.62);
+            double diffZ = ez - HadesAPI.player.getZ();
 
-        float calcYaw = (float) (Math.atan2(diffZ, diffX) * 180.0 / Math.PI - 90.0);
-        float calcPitch = (float) -(Math.atan2(diffY, Math.sqrt(diffX * diffX + diffZ * diffZ)) * 180.0 / Math.PI);
+            float calcYaw = (float) (Math.atan2(diffZ, diffX) * 180.0 / Math.PI - 90.0);
+            float calcPitch = (float) -(Math.atan2(diffY, Math.sqrt(diffX * diffX + diffZ * diffZ)) * 180.0 / Math.PI);
 
-        float yaw = updateRotationStatic(currentYaw, calcYaw, yawSpeed);
-        float pitch = updateRotationStatic(currentPitch, calcPitch, pitchSpeed);
+            float yaw = updateRotationStatic(currentYaw, calcYaw, yawSpeed);
+            float pitch = updateRotationStatic(currentPitch, calcPitch, pitchSpeed);
 
-        // No jitter — clean smooth rotation for the visual camera
-        return applyGCD(yaw, pitch, currentYaw, currentPitch);
+            // No jitter — clean smooth rotation for the visual camera
+            return applyGCD(yaw, pitch, currentYaw, currentPitch);
+        } finally {
+            com.hades.client.event.EventBus.endSection("RotationUtil");
+        }
     }
 
-    private static float updateRotationStatic(float current, float limit, float speedStr) {
+    public static float updateRotationStatic(float current, float limit, float speedStr) {
         float f = wrapAngle(limit - current);
 
         // Easing interpolation: Swing fast initially, decelerate smoothly on approach.

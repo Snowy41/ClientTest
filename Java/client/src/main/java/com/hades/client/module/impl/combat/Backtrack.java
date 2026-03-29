@@ -177,19 +177,30 @@ public class Backtrack extends Module {
             }
         }
 
-        // Chronological Ping Spoof: Flush transaction packets naturally based on delay
-        // This completely prevents Burst transmission (which flags on GrimAC/Intave)
+        // Gradual Transaction Drip: Release held C00/C0F responses at a natural rate
+        // Capped at 2 per tick to prevent burst detection (which flags Polar as ping spoofing)
         if (pingSpoof.getValue() && !transactionQueue.isEmpty()) {
             List<DelayedPacket> toSend = new ArrayList<>();
             long now = System.currentTimeMillis();
-            long targetDelay = blockPackets ? (long) timerDelay.getValue().doubleValue() : 0;
+            int sent = 0;
+            int maxPerTick = 2; // Mimics gradual connection recovery
             
             for (DelayedPacket dp : transactionQueue) {
-                // If we are actively tracking, delay transaction by EXACTLY timerDelay to perfectly emulate constant ping
-                // If tracking dropped, bleed the delay out to 0
-                if (!blockPackets || (now - dp.timestamp >= targetDelay)) {
+                if (sent >= maxPerTick) break;
+                
+                if (blockPackets) {
+                    // While actively tracking, delay by exactly timerDelay for consistent ping emulation
+                    long targetDelay = (long) timerDelay.getValue().doubleValue();
+                    if (now - dp.timestamp >= targetDelay) {
+                        HadesAPI.network.sendPacketDirect(dp.packet);
+                        toSend.add(dp);
+                        sent++;
+                    }
+                } else {
+                    // Tracking stopped: bleed out transactions gradually (oldest first)
                     HadesAPI.network.sendPacketDirect(dp.packet);
                     toSend.add(dp);
+                    sent++;
                 }
             }
             transactionQueue.removeAll(toSend);
@@ -372,10 +383,11 @@ public class Backtrack extends Module {
     // ── Packet classification ──
 
     private boolean shouldDelayPacket(Object packet, String name) {
-        // Always delay keepalives and transactions to spoof ping, making server accept hits on old positions
-        if (name.equals("S00PacketKeepAlive") || name.equals("S32PacketConfirmTransaction")) {
-            return true;
-        }
+        // NOTE: We do NOT delay incoming S00PacketKeepAlive or S32PacketConfirmTransaction here.
+        // These must reach the vanilla handler immediately to prevent KeepAlive timeouts.
+        // Ping spoofing is handled by holding the OUTGOING responses (C00/C0F) in transactionQueue,
+        // not by blocking the incoming triggers. This prevents the double-hold blackout that
+        // Polar detects as artificial ping manipulation.
 
         // Entity packets: ONLY delay if they belong to our target
         boolean isEntityPacket = name.startsWith("S14PacketEntity") ||

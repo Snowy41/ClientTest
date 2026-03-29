@@ -29,6 +29,20 @@ public class Vanilla189Entity implements IEntity {
     private static Field swingProgressField;
     private static Field isSwingInProgressField;
     private static Field hurtTimeField;
+    private static Field fallDistanceField;
+
+    // -- Fast Unsafe Offsets --
+    private static long posXOffset = -1L, posYOffset = -1L, posZOffset = -1L;
+    private static long prevPosXOffset = -1L, prevPosYOffset = -1L, prevPosZOffset = -1L;
+    private static long motionXOffset = -1L, motionYOffset = -1L, motionZOffset = -1L;
+    private static long rotYawOffset = -1L, rotPitchOffset = -1L;
+    private static long onGroundOffset = -1L;
+    private static long lastTickPosXOffset = -1L, lastTickPosYOffset = -1L, lastTickPosZOffset = -1L;
+    private static long entityWidthOffset = -1L, entityHeightOffset = -1L;
+    private static long swingProgressOffset = -1L;
+    private static long isSwingInProgressOffset = -1L;
+    private static long hurtTimeOffset = -1L;
+    private static long fallDistanceOffset = -1L;
     private static Method getHealthMethod, getMaxHealthMethod;
     private static Method getEntityIdMethod;
     private static Method getUUIDMethod;
@@ -59,6 +73,26 @@ public class Vanilla189Entity implements IEntity {
             lastTickPosZField = ReflectionUtil.findField(entityClass, "R", "lastTickPosZ", "field_70136_U");
             entityWidthField = ReflectionUtil.findField(entityClass, "J", "width", "field_70130_N");
             entityHeightField = ReflectionUtil.findField(entityClass, "K", "height", "field_70131_O");
+            fallDistanceField = ReflectionUtil.findField(entityClass, "O", "fallDistance", "field_70143_R");
+
+            posXOffset = ReflectionUtil.getFieldOffset(posXField);
+            posYOffset = ReflectionUtil.getFieldOffset(posYField);
+            posZOffset = ReflectionUtil.getFieldOffset(posZField);
+            prevPosXOffset = ReflectionUtil.getFieldOffset(prevPosXField);
+            prevPosYOffset = ReflectionUtil.getFieldOffset(prevPosYField);
+            prevPosZOffset = ReflectionUtil.getFieldOffset(prevPosZField);
+            motionXOffset = ReflectionUtil.getFieldOffset(motionXField);
+            motionYOffset = ReflectionUtil.getFieldOffset(motionYField);
+            motionZOffset = ReflectionUtil.getFieldOffset(motionZField);
+            rotYawOffset = ReflectionUtil.getFieldOffset(rotYawField);
+            rotPitchOffset = ReflectionUtil.getFieldOffset(rotPitchField);
+            onGroundOffset = ReflectionUtil.getFieldOffset(onGroundField);
+            lastTickPosXOffset = ReflectionUtil.getFieldOffset(lastTickPosXField);
+            lastTickPosYOffset = ReflectionUtil.getFieldOffset(lastTickPosYField);
+            lastTickPosZOffset = ReflectionUtil.getFieldOffset(lastTickPosZField);
+            entityWidthOffset = ReflectionUtil.getFieldOffset(entityWidthField);
+            entityHeightOffset = ReflectionUtil.getFieldOffset(entityHeightField);
+            fallDistanceOffset = ReflectionUtil.getFieldOffset(fallDistanceField);
             
             getNameMethod = ReflectionUtil.findMethod(entityClass, new String[]{"e_", "getName", "func_70005_c_"});
             isInvisibleMethod = ReflectionUtil.findMethod(entityClass, new String[]{"ay", "isInvisible", "func_82150_aj"});
@@ -72,8 +106,12 @@ public class Vanilla189Entity implements IEntity {
             swingProgressField = ReflectionUtil.findField(livingClass, "az", "swingProgress", "field_70733_aJ");
             isSwingInProgressField = ReflectionUtil.findField(livingClass, "ar", "isSwingInProgress", "field_82175_bq");
             hurtTimeField = ReflectionUtil.findField(livingClass, "at", "hurtTime", "field_70737_aN");
-            getHealthMethod = ReflectionUtil.findMethod(livingClass, new String[]{"bn", "getHealth", "func_110143_aJ"});
-            getMaxHealthMethod = ReflectionUtil.findMethod(livingClass, new String[]{"bI", "getMaxHealth", "func_110138_aP"});
+            getHealthMethod = ReflectionUtil.findMethod(livingClass, new String[]{"getHealth", "func_110143_aJ", "bn"});
+            getMaxHealthMethod = ReflectionUtil.findMethod(livingClass, new String[]{"getMaxHealth", "func_110138_aP", "bI"});
+            
+            swingProgressOffset = ReflectionUtil.getFieldOffset(swingProgressField);
+            isSwingInProgressOffset = ReflectionUtil.getFieldOffset(isSwingInProgressField);
+            hurtTimeOffset = ReflectionUtil.getFieldOffset(hurtTimeField);
         }
         cached = true;
     }
@@ -106,145 +144,61 @@ public class Vanilla189Entity implements IEntity {
         return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    @Override public double getX() { return ReflectionUtil.getDoubleField(rawEntity, posXField); }
-    @Override public double getY() { return ReflectionUtil.getDoubleField(rawEntity, posYField); }
-    @Override public double getZ() { return ReflectionUtil.getDoubleField(rawEntity, posZField); }
-    @Override public double getPrevX() { return ReflectionUtil.getDoubleField(rawEntity, prevPosXField); }
-    @Override public double getPrevY() { return ReflectionUtil.getDoubleField(rawEntity, prevPosYField); }
-    @Override public double getPrevZ() { return ReflectionUtil.getDoubleField(rawEntity, prevPosZField); }
-    @Override public double getLastTickX() { return ReflectionUtil.getDoubleField(rawEntity, lastTickPosXField); }
-    @Override public double getLastTickY() { return ReflectionUtil.getDoubleField(rawEntity, lastTickPosYField); }
-    @Override public double getLastTickZ() { return ReflectionUtil.getDoubleField(rawEntity, lastTickPosZField); }
-    @Override public float getWidth() { return ReflectionUtil.getFloatField(rawEntity, entityWidthField); }
-    @Override public float getHeight() { return ReflectionUtil.getFloatField(rawEntity, entityHeightField); }
-    @Override public float getYaw() { return ReflectionUtil.getFloatField(rawEntity, rotYawField); }
-    @Override public float getPitch() { return ReflectionUtil.getFloatField(rawEntity, rotPitchField); }
-    @Override public boolean isOnGround() { return ReflectionUtil.getBoolField(rawEntity, onGroundField); }
+    @Override public double getX() { return ReflectionUtil.getDoubleFast(rawEntity, posXOffset, posXField); }
+    @Override public double getY() { return ReflectionUtil.getDoubleFast(rawEntity, posYOffset, posYField); }
+    @Override public double getZ() { return ReflectionUtil.getDoubleFast(rawEntity, posZOffset, posZField); }
+    @Override public double getPrevX() { return ReflectionUtil.getDoubleFast(rawEntity, prevPosXOffset, prevPosXField); }
+    @Override public double getPrevY() { return ReflectionUtil.getDoubleFast(rawEntity, prevPosYOffset, prevPosYField); }
+    @Override public double getPrevZ() { return ReflectionUtil.getDoubleFast(rawEntity, prevPosZOffset, prevPosZField); }
+    @Override public double getLastTickX() { return ReflectionUtil.getDoubleFast(rawEntity, lastTickPosXOffset, lastTickPosXField); }
+    @Override public double getLastTickY() { return ReflectionUtil.getDoubleFast(rawEntity, lastTickPosYOffset, lastTickPosYField); }
+    @Override public double getLastTickZ() { return ReflectionUtil.getDoubleFast(rawEntity, lastTickPosZOffset, lastTickPosZField); }
+    @Override public float getWidth() { return ReflectionUtil.getFloatFast(rawEntity, entityWidthOffset, entityWidthField); }
+    @Override public float getHeight() { return ReflectionUtil.getFloatFast(rawEntity, entityHeightOffset, entityHeightField); }
+    @Override public float getYaw() { return ReflectionUtil.getFloatFast(rawEntity, rotYawOffset, rotYawField); }
+    @Override public float getPitch() { return ReflectionUtil.getFloatFast(rawEntity, rotPitchOffset, rotPitchField); }
+    @Override public boolean isOnGround() { return ReflectionUtil.getBoolFast(rawEntity, onGroundOffset, onGroundField); }
     
     @Override
     public boolean isInvisible() {
         try { return isInvisibleMethod != null && (boolean) isInvisibleMethod.invoke(rawEntity); } catch (Exception e) { return false; }
     }
 
-    @Override public double getMotionX() { return ReflectionUtil.getDoubleField(rawEntity, motionXField); }
-    @Override public double getMotionY() { return ReflectionUtil.getDoubleField(rawEntity, motionYField); }
-    @Override public double getMotionZ() { return ReflectionUtil.getDoubleField(rawEntity, motionZField); }
-    @Override public float getSwingProgress() { return ReflectionUtil.getFloatField(rawEntity, swingProgressField); }
-    @Override public boolean isSwingInProgress() { return ReflectionUtil.getBoolField(rawEntity, isSwingInProgressField); }
-    @Override public int getHurtTime() { return ReflectionUtil.getIntField(rawEntity, hurtTimeField); }
-
-    private Float cachedHealth = null;
-    private Float cachedMaxHealth = null;
-    private long lastHealthTime = 0;
-    private long lastMaxHealthTime = 0;
-    
-    // Cache the LabyMod LivingEntity reference to avoid O(N) UUID lookup each call
-    private Object cachedLabyLivingEntity = null; // net.labymod.api.client.entity.LivingEntity
-    private boolean labyEntityLookupDone = false;
-    private long lastLabyLookupTime = 0;
-
-    private Object getLabyLivingEntity() {
-        long now = System.currentTimeMillis();
-        // Re-lookup every 2 seconds to handle entity respawns/world changes
-        if (labyEntityLookupDone && (now - lastLabyLookupTime) < 2000) {
-            return cachedLabyLivingEntity;
-        }
-        labyEntityLookupDone = true;
-        lastLabyLookupTime = now;
-        cachedLabyLivingEntity = null;
-        try {
-            if (net.labymod.api.Laby.isInitialized() && getUUIDMethod != null) {
-                java.util.UUID myUuid = (java.util.UUID) getUUIDMethod.invoke(rawEntity);
-                if (myUuid != null) {
-                    for (net.labymod.api.client.entity.Entity lEntity : net.labymod.api.Laby.labyAPI().minecraft().clientWorld().getEntities()) {
-                        if (myUuid.equals(lEntity.getUniqueId()) && lEntity instanceof net.labymod.api.client.entity.LivingEntity) {
-                            cachedLabyLivingEntity = lEntity;
-                            break;
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {}
-        return cachedLabyLivingEntity;
-    }
+    @Override public double getMotionX() { return ReflectionUtil.getDoubleFast(rawEntity, motionXOffset, motionXField); }
+    @Override public double getMotionY() { return ReflectionUtil.getDoubleFast(rawEntity, motionYOffset, motionYField); }
+    @Override public double getMotionZ() { return ReflectionUtil.getDoubleFast(rawEntity, motionZOffset, motionZField); }
+    @Override public float getSwingProgress() { return ReflectionUtil.getFloatFast(rawEntity, swingProgressOffset, swingProgressField); }
+    @Override public boolean isSwingInProgress() { return ReflectionUtil.getBoolFast(rawEntity, isSwingInProgressOffset, isSwingInProgressField); }
+    @Override public int getHurtTime() { return ReflectionUtil.getIntFast(rawEntity, hurtTimeOffset, hurtTimeField); }
+    @Override public float getFallDistance() { return ReflectionUtil.getFloatFast(rawEntity, fallDistanceOffset, fallDistanceField); }
 
     @Override
     public float getHealth() {
-        long now = System.currentTimeMillis();
-        if (cachedHealth != null && (now - lastHealthTime) < 50) return cachedHealth;
+        if (!isLiving()) return 20f;
         
-        // Try cached LabyMod entity reference first (O(1) after first lookup)
-        Object labyEntity = getLabyLivingEntity();
-        if (labyEntity instanceof net.labymod.api.client.entity.LivingEntity) {
-            cachedHealth = ((net.labymod.api.client.entity.LivingEntity) labyEntity).getHealth();
-            lastHealthTime = now;
-            return cachedHealth;
-        }
-        
-        // Fallback: direct reflection on raw entity
         if (getHealthMethod != null) {
             try { 
-                cachedHealth = (float) getHealthMethod.invoke(rawEntity);
-                lastHealthTime = now;
-                return cachedHealth; 
+                return (float) getHealthMethod.invoke(rawEntity); 
             } catch (Exception e) {}
         }
-        for (Method m : rawEntity.getClass().getMethods()) {
-            if (m.getName().equals("getHealth") && m.getParameterCount() == 0 && m.getReturnType() == float.class) {
-                getHealthMethod = m;
-                getHealthMethod.setAccessible(true);
-                try { 
-                    cachedHealth = (float) getHealthMethod.invoke(rawEntity); 
-                    lastHealthTime = now;
-                    return cachedHealth;
-                } catch (Exception e) {}
-            }
-        }
-        cachedHealth = 20f;
-        lastHealthTime = now;
         return 20f;
     }
 
     @Override
     public float getMaxHealth() {
-        long now = System.currentTimeMillis();
-        if (cachedMaxHealth != null && (now - lastMaxHealthTime) < 50) return cachedMaxHealth;
-        
-        // Try cached LabyMod entity reference first (O(1) after first lookup)
-        Object labyEntity = getLabyLivingEntity();
-        if (labyEntity instanceof net.labymod.api.client.entity.LivingEntity) {
-            cachedMaxHealth = ((net.labymod.api.client.entity.LivingEntity) labyEntity).getMaximalHealth();
-            lastMaxHealthTime = now;
-            return cachedMaxHealth;
-        }
+        if (!isLiving()) return 20f;
 
-        // Fallback: direct reflection on raw entity
         if (getMaxHealthMethod != null) {
             try { 
-                cachedMaxHealth = (float) getMaxHealthMethod.invoke(rawEntity); 
-                lastMaxHealthTime = now;
-                return cachedMaxHealth;
+                return (float) getMaxHealthMethod.invoke(rawEntity); 
             } catch (Exception e) {}
         }
-        for (Method m : rawEntity.getClass().getMethods()) {
-            if (m.getName().equals("getMaxHealth") && m.getParameterCount() == 0 && m.getReturnType() == float.class) {
-                getMaxHealthMethod = m;
-                getMaxHealthMethod.setAccessible(true);
-                try { 
-                    cachedMaxHealth = (float) getMaxHealthMethod.invoke(rawEntity); 
-                    lastMaxHealthTime = now;
-                    return cachedMaxHealth;
-                } catch (Exception e) {}
-            }
-        }
-        cachedMaxHealth = 20f;
-        lastMaxHealthTime = now;
         return 20f;
     }
 
-    @Override public void setYaw(float yaw) { ReflectionUtil.setFloatField(rawEntity, rotYawField, yaw); }
-    @Override public void setPitch(float pitch) { ReflectionUtil.setFloatField(rawEntity, rotPitchField, pitch); }
-    @Override public void setMotionX(double x) { ReflectionUtil.setDoubleField(rawEntity, motionXField, x); }
-    @Override public void setMotionY(double y) { ReflectionUtil.setDoubleField(rawEntity, motionYField, y); }
-    @Override public void setMotionZ(double z) { ReflectionUtil.setDoubleField(rawEntity, motionZField, z); }
+    @Override public void setYaw(float yaw) { ReflectionUtil.setFloatFast(rawEntity, rotYawOffset, rotYawField, yaw); }
+    @Override public void setPitch(float pitch) { ReflectionUtil.setFloatFast(rawEntity, rotPitchOffset, rotPitchField, pitch); }
+    @Override public void setMotionX(double x) { ReflectionUtil.setDoubleFast(rawEntity, motionXOffset, motionXField, x); }
+    @Override public void setMotionY(double y) { ReflectionUtil.setDoubleFast(rawEntity, motionYOffset, motionYField, y); }
+    @Override public void setMotionZ(double z) { ReflectionUtil.setDoubleFast(rawEntity, motionZOffset, motionZField, z); }
 }

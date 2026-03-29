@@ -20,6 +20,7 @@ public class HadesIngameActivity extends IngameOverlayActivity {
 
         SimpleWidget hadesWidget = new SimpleWidget() {
             @Override
+            @SuppressWarnings("removal")
             public void render(Stack stack, MutableMouse mouse, float tickDelta) {
                 // Here, LabyMod has natively prepared the Stack and ScreenContext
                 int scaledW = Laby.labyAPI().minecraft().minecraftWindow().getScaledWidth();

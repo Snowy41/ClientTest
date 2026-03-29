@@ -12,6 +12,7 @@ import com.hades.client.module.setting.BooleanSetting;
 import com.hades.client.module.setting.ModeSetting;
 import com.hades.client.module.setting.NumberSetting;
 import com.hades.client.util.HadesLogger;
+import com.hades.client.manager.ProxyManager;
 
 import java.io.File;
 import java.io.FileReader;
@@ -113,6 +114,41 @@ public class ConfigManager {
             }
         }
 
+        if (root.has("proxy")) {
+            JsonObject proxyNode = root.getAsJsonObject("proxy");
+            
+            if (proxyNode.has("savedProxies")) {
+                com.google.gson.JsonArray arr = proxyNode.getAsJsonArray("savedProxies");
+                ProxyManager.getInstance().getSavedProxies().clear();
+                
+                for (JsonElement el : arr) {
+                    JsonObject pObj = el.getAsJsonObject();
+                    String ip = pObj.has("ip") ? pObj.get("ip").getAsString() : "";
+                    String port = pObj.has("port") ? pObj.get("port").getAsString() : "";
+                    String username = pObj.has("username") ? pObj.get("username").getAsString() : "";
+                    String password = pObj.has("password") ? pObj.get("password").getAsString() : "";
+                    String typeStr = pObj.has("type") ? pObj.get("type").getAsString() : ProxyManager.ProxyType.HTTP.name();
+                    
+                    ProxyManager.ProxyEntry entry = new ProxyManager.ProxyEntry(ip, port, username, password, ProxyManager.ProxyType.valueOf(typeStr));
+                    ProxyManager.getInstance().getSavedProxies().add(entry);
+                    
+                    // Immediately test the proxy off-thread on initialization
+                    ProxyManager.getInstance().testProxyAsync(entry);
+                }
+            }
+            
+            if (proxyNode.has("activeIndex")) {
+                int activeIndex = proxyNode.get("activeIndex").getAsInt();
+                if (activeIndex >= 0 && activeIndex < ProxyManager.getInstance().getSavedProxies().size()) {
+                    ProxyManager.getInstance().setActiveProxy(ProxyManager.getInstance().getSavedProxies().get(activeIndex));
+                } else {
+                    ProxyManager.getInstance().disableProxy();
+                }
+            } else {
+                ProxyManager.getInstance().disableProxy();
+            }
+        }
+
         if (root.has("modules")) {
             JsonObject modulesNode = root.getAsJsonObject("modules");
 
@@ -179,6 +215,29 @@ public class ConfigManager {
             themeNode.addProperty("gradientStart", com.hades.client.gui.clickgui.theme.Theme.ACCENT_GRADIENT_START);
             themeNode.addProperty("gradientEnd", com.hades.client.gui.clickgui.theme.Theme.ACCENT_GRADIENT_END);
             root.add("theme", themeNode);
+
+            JsonObject proxyNode = new JsonObject();
+            com.google.gson.JsonArray savedProxiesArray = new com.google.gson.JsonArray();
+            int activeIndex = -1;
+            
+            for (int i = 0; i < ProxyManager.getInstance().getSavedProxies().size(); i++) {
+                ProxyManager.ProxyEntry entry = ProxyManager.getInstance().getSavedProxies().get(i);
+                JsonObject pObj = new JsonObject();
+                pObj.addProperty("ip", entry.ip);
+                pObj.addProperty("port", entry.port);
+                pObj.addProperty("username", entry.username != null ? entry.username : "");
+                pObj.addProperty("password", entry.password != null ? entry.password : "");
+                pObj.addProperty("type", entry.type.name());
+                savedProxiesArray.add(pObj);
+                
+                if (ProxyManager.getInstance().getActiveProxy() == entry) {
+                    activeIndex = i;
+                }
+            }
+            
+            proxyNode.add("savedProxies", savedProxiesArray);
+            proxyNode.addProperty("activeIndex", activeIndex);
+            root.add("proxy", proxyNode);
             
             gson.toJson(root, writer);
 

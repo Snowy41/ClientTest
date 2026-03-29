@@ -9,27 +9,38 @@ public class Sidebar extends Component {
     private float themeHoverAnimation = 0f;
     private float profileHoverAnimation = 0f;
 
+    private float accountHoverAnimation = 0f;
+    private float proxyHoverAnimation = 0f;
+
     private final Runnable onHudClick;
     private final Runnable onConfigsClick;
     private final Runnable onThemeClick;
+    private final Runnable onAccountClick;
+    private final Runnable onProxyClick;
     private final Runnable onProfileClick;
 
     private boolean hudActive;
     private boolean configActive;
     private boolean themeActive;
+    private boolean accountActive;
+    private boolean proxyActive;
     private boolean profileActive;
 
-    public Sidebar(Runnable onHudClick, Runnable onConfigsClick, Runnable onThemeClick, Runnable onProfileClick) {
+    public Sidebar(Runnable onHudClick, Runnable onConfigsClick, Runnable onThemeClick, Runnable onAccountClick, Runnable onProxyClick, Runnable onProfileClick) {
         this.onHudClick = onHudClick;
         this.onConfigsClick = onConfigsClick;
         this.onThemeClick = onThemeClick;
+        this.onAccountClick = onAccountClick;
+        this.onProxyClick = onProxyClick;
         this.onProfileClick = onProfileClick;
     }
 
-    public void setActiveState(boolean hud, boolean config, boolean theme, boolean profile) {
+    public void setActiveState(boolean hud, boolean config, boolean theme, boolean account, boolean proxy, boolean profile) {
         this.hudActive = hud;
         this.configActive = config;
         this.themeActive = theme;
+        this.accountActive = account;
+        this.proxyActive = proxy;
         this.profileActive = profile;
     }
 
@@ -71,6 +82,18 @@ public class Sidebar extends Component {
         float themeY = currentBtnY;
         boolean themeHovered = mouseX >= x && mouseX <= x + width && mouseY >= themeY && mouseY <= themeY + 30;
         themeHoverAnimation = smooth(themeHoverAnimation, themeHovered ? 1f : 0f, ANIMATION_SPEED);
+        currentBtnY += 34;
+
+        // Accounts
+        float accountY = currentBtnY;
+        boolean accountHovered = mouseX >= x && mouseX <= x + width && mouseY >= accountY && mouseY <= accountY + 30;
+        accountHoverAnimation = smooth(accountHoverAnimation, accountHovered ? 1f : 0f, ANIMATION_SPEED);
+        currentBtnY += 34;
+
+        // Proxies
+        float proxyY = currentBtnY;
+        boolean proxyHovered = mouseX >= x && mouseX <= x + width && mouseY >= proxyY && mouseY <= proxyY + 30;
+        proxyHoverAnimation = smooth(proxyHoverAnimation, proxyHovered ? 1f : 0f, ANIMATION_SPEED);
         currentBtnY += 34;
 
         // HUD
@@ -146,6 +169,36 @@ public class Sidebar extends Component {
             HadesAPI.Render.drawCenteredString("✨ Theme", x + width / 2f, themeY + 10, themeTextColor, 14f, true, false, false);
         }
 
+        // ── Accounts Button ──
+        int accountBg = accountActive ? activeBtnColor : HadesAPI.Render.lerpColor(baseBtnColor, hoverBtnColor, accountHoverAnimation);
+        HadesAPI.Render.drawRoundedRect(x + 6, accountY, width - 12, 30, 4f, accountBg);
+
+        int accountTextColor = accountActive ? Theme.TEXT_PRIMARY : HadesAPI.Render.lerpColor(Theme.TEXT_MUTED, Theme.TEXT_PRIMARY, accountHoverAnimation);
+        float accountTextWidth = HadesAPI.Render.getStringWidth("Accounts", 14f, true, false);
+        float accountTotalWidth = configIconSize + 4 + accountTextWidth;
+        float accountStartX = x + (width - accountTotalWidth) / 2f;
+        
+        if (HadesAPI.Render.drawImage("hades", "pictures/icons/profile.png", accountStartX, accountY + (30 - configIconSize) / 2f, configIconSize, configIconSize)) {
+            HadesAPI.Render.drawString("Accounts", accountStartX + configIconSize + 4, accountY + (30 - HadesAPI.Render.getFontHeight(14f, true, false)) / 2f, accountTextColor, 14f, true, false, false);
+        } else {
+            HadesAPI.Render.drawCenteredString("\uD83D\uDC64 Accounts", x + width / 2f, accountY + 10, accountTextColor, 14f, true, false, false);
+        }
+
+        // ── Proxies Button ──
+        int proxyBg = proxyActive ? activeBtnColor : HadesAPI.Render.lerpColor(baseBtnColor, hoverBtnColor, proxyHoverAnimation);
+        HadesAPI.Render.drawRoundedRect(x + 6, proxyY, width - 12, 30, 4f, proxyBg);
+
+        int proxyTextColor = proxyActive ? Theme.TEXT_PRIMARY : HadesAPI.Render.lerpColor(Theme.TEXT_MUTED, Theme.TEXT_PRIMARY, proxyHoverAnimation);
+        float proxyTextWidth = HadesAPI.Render.getStringWidth("Proxies", 14f, true, false);
+        float proxyTotalWidth = configIconSize + 4 + proxyTextWidth;
+        float proxyStartX = x + (width - proxyTotalWidth) / 2f;
+        
+        if (HadesAPI.Render.drawImage("hades", "pictures/icons/profile.png", proxyStartX, proxyY + (30 - configIconSize) / 2f, configIconSize, configIconSize)) {
+            HadesAPI.Render.drawString("Proxies", proxyStartX + configIconSize + 4, proxyY + (30 - HadesAPI.Render.getFontHeight(14f, true, false)) / 2f, proxyTextColor, 14f, true, false, false);
+        } else {
+            HadesAPI.Render.drawCenteredString("\uD83C\uDF10 Proxies", x + width / 2f, proxyY + 10, proxyTextColor, 14f, true, false, false);
+        }
+
         // ── Profile button at bottom ──
         HadesAPI.Render.drawRect(x + 10, sep2Y, width - 20, 1, Theme.SIDEBAR_SEPARATOR);
 
@@ -200,6 +253,12 @@ public class Sidebar extends Component {
         float themeY = currentBtnY;
         currentBtnY += 34;
 
+        float accountY = currentBtnY;
+        currentBtnY += 34;
+
+        float proxyY = currentBtnY;
+        currentBtnY += 34;
+
         float hudY = currentBtnY;
         if (hudModuleOn) {
             currentBtnY += 34;
@@ -217,6 +276,10 @@ public class Sidebar extends Component {
                 if (onConfigsClick != null) onConfigsClick.run();
             } else if (mouseY >= themeY && mouseY <= themeY + 30) {
                 if (onThemeClick != null) onThemeClick.run();
+            } else if (mouseY >= accountY && mouseY <= accountY + 30) {
+                if (onAccountClick != null) onAccountClick.run();
+            } else if (mouseY >= proxyY && mouseY <= proxyY + 30) {
+                if (onProxyClick != null) onProxyClick.run();
             } else if (mouseY >= profileY && mouseY <= profileY + profileH) {
                 if (onProfileClick != null) onProfileClick.run();
             }

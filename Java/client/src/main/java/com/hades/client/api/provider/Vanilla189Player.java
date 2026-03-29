@@ -10,6 +10,7 @@ public class Vanilla189Player implements IPlayer {
 
     private final Class<?> minecraftClass;
     private final Method getMinecraftMethod;
+    private static Object mcInstance;
     private final Field thePlayerField;
 
     // Entity fields
@@ -21,13 +22,14 @@ public class Vanilla189Player implements IPlayer {
     private Field onGroundField;
     private Field lastTickPosXField, lastTickPosYField, lastTickPosZField;
     private Field entityWidthField, entityHeightField;
-    private Field hurtTimeField;
     private Field moveForwardField, moveStrafingField;
+    private Field fallDistanceField;
+    private Field hurtTimeField;
 
     private Method getHealthMethod;
     private Method getMaxHealthMethod;
     private Method isInvisibleMethod;
-    private Method setAnglesMethod;
+    // public static Method setAnglesMethod; // Unused 
     public static Method setSprintingMethod;
     private Method isSprintingMethod;
     private Method getEyeHeightMethod;
@@ -40,7 +42,14 @@ public class Vanilla189Player implements IPlayer {
 
     private Method getUUIDMethod;
 
+    private Method getEntityIdMethod;
+    private Method getNameMethod;
+    private Method swingItemMethod;
+    private Method closeScreenMethod;
+    private Method getCurrentEquippedItemMethod;
     private Method getCurrentItemMethod;
+    private Method getStackItemMethod;
+
     private Class<?> itemSwordClass;
     private Class<?> itemAxeClass;
     private Class<?> itemBowClass;
@@ -56,8 +65,10 @@ public class Vanilla189Player implements IPlayer {
 
     private Object getPlayer() {
         try {
-            Object mc = getMinecraftMethod != null ? getMinecraftMethod.invoke(null) : null;
-            return mc != null && thePlayerField != null ? thePlayerField.get(mc) : null;
+            if (mcInstance == null && getMinecraftMethod != null) {
+                mcInstance = getMinecraftMethod.invoke(null);
+            }
+            return mcInstance != null && thePlayerField != null ? thePlayerField.get(mcInstance) : null;
         } catch (Exception e) {
             return null;
         }
@@ -87,10 +98,10 @@ public class Vanilla189Player implements IPlayer {
             lastTickPosZField = ReflectionUtil.findField(entityClass, "o", "lastTickPosZ", "field_70136_U");
             entityWidthField = ReflectionUtil.findField(entityClass, "I", "width", "field_70130_N");
             entityHeightField = ReflectionUtil.findField(entityClass, "J", "height", "field_70131_O");
+            fallDistanceField = ReflectionUtil.findField(entityClass, "O", "fallDistance", "field_70143_R");
             isInvisibleMethod = ReflectionUtil.findMethod(entityClass,
                     new String[] { "ay", "isInvisible", "func_82150_aj" });
-            setAnglesMethod = ReflectionUtil.findMethod(entityClass, new String[] { "c", "setAngles", "func_70082_c" },
-                    float.class, float.class);
+            // setAnglesMethod = ReflectionUtil.findMethod(entityClass, new String[] { "c", "setAngles", "func_70082_c" }, float.class, float.class);
             setSprintingMethod = ReflectionUtil.findMethod(entityClass,
                     new String[] { "d", "setSprinting", "func_70031_b" }, boolean.class);
             isSprintingMethod = ReflectionUtil.findMethod(entityClass,
@@ -103,12 +114,22 @@ public class Vanilla189Player implements IPlayer {
                     "field_70123_F");
             getUUIDMethod = ReflectionUtil.findMethod(entityClass,
                     new String[] { "aK", "getUniqueID", "func_110124_au" });
+            getEntityIdMethod = ReflectionUtil.findMethod(entityClass,
+                    new String[] { "F", "getEntityId", "func_145782_y" });
+            getNameMethod = ReflectionUtil.findMethod(entityClass, 
+                    new String[] { "e_", "getName", "func_70005_c_" });
         }
 
         Class<?> playerClass = ReflectionUtil.findClass("net.minecraft.entity.player.EntityPlayer", "wn");
         if (playerClass != null) {
             getItemInUseDurationMethod = ReflectionUtil.findMethod(playerClass,
                     new String[] { "bT", "getItemInUseDuration", "func_71052_bv" });
+            swingItemMethod = ReflectionUtil.findMethod(playerClass,
+                    new String[] { "bw", "swingItem", "func_71038_i" });
+            closeScreenMethod = ReflectionUtil.findMethod(playerClass, 
+                    new String[] { "n", "closeScreen", "func_71053_j" });
+            getCurrentEquippedItemMethod = ReflectionUtil.findMethod(playerClass, 
+                    new String[]{"bz", "getCurrentEquippedItem", "func_70694_bm"});
         }
 
         Class<?> livingClass = ReflectionUtil.findClass("net.minecraft.entity.EntityLivingBase", "pr");
@@ -127,6 +148,19 @@ public class Vanilla189Player implements IPlayer {
         itemSwordClass = ReflectionUtil.findClass("net.minecraft.item.ItemSword", "ze", "zw");
         itemAxeClass = ReflectionUtil.findClass("net.minecraft.item.ItemAxe", "zq", "zx");
         itemBowClass = ReflectionUtil.findClass("net.minecraft.item.ItemBow", "zd", "zh");
+        
+        Class<?> inventoryClass = ReflectionUtil.findClass("net.minecraft.entity.player.InventoryPlayer", "wm");
+        if (inventoryClass != null) {
+            getCurrentItemMethod = ReflectionUtil.findMethod(inventoryClass,
+                    new String[] { "h", "getCurrentItem", "func_70448_g" });
+        }
+        
+        Class<?> itemStackClass = ReflectionUtil.findClass("net.minecraft.item.ItemStack", "zx");
+        if (itemStackClass != null) {
+            getStackItemMethod = ReflectionUtil.findMethod(itemStackClass,
+                    new String[] { "b", "getItem", "func_77973_b" });
+        }
+
         cached = true;
     }
 
@@ -142,13 +176,11 @@ public class Vanilla189Player implements IPlayer {
 
     @Override
     public int getEntityId() {
+        cacheFields();
         try {
             Object p = getPlayer();
-            if (p != null) {
-                Method m = ReflectionUtil.findMethod(p.getClass(),
-                        new String[] { "F", "getEntityId", "func_145782_y" });
-                if (m != null)
-                    return (int) m.invoke(p);
+            if (p != null && getEntityIdMethod != null) {
+                return (int) getEntityIdMethod.invoke(p);
             }
         } catch (Exception ignored) {
         }
@@ -170,10 +202,8 @@ public class Vanilla189Player implements IPlayer {
         cacheFields();
         try {
             Object p = getPlayer();
-            if (p != null) {
-                Method m = ReflectionUtil.findMethod(p.getClass(), new String[] { "e_", "getName", "func_70005_c_" });
-                if (m != null)
-                    return (String) m.invoke(p);
+            if (p != null && getNameMethod != null) {
+                return (String) getNameMethod.invoke(p);
             }
         } catch (Exception ignored) {
         }
@@ -477,6 +507,12 @@ public class Vanilla189Player implements IPlayer {
     }
 
     @Override
+    public float getFallDistance() {
+        cacheFields();
+        return ReflectionUtil.getFloatField(getPlayer(), fallDistanceField);
+    }
+
+    @Override
     public float getSwingProgress() {
         cacheFields();
         return ReflectionUtil.getFloatField(getPlayer(), swingProgressField);
@@ -504,19 +540,13 @@ public class Vanilla189Player implements IPlayer {
             if (inventory == null)
                 return false;
 
-            if (getCurrentItemMethod == null) {
-                getCurrentItemMethod = ReflectionUtil.findMethod(inventory.getClass(),
-                        new String[] { "h", "getCurrentItem", "func_70448_g" });
-            }
             if (getCurrentItemMethod != null) {
                 Object itemStack = getCurrentItemMethod.invoke(inventory);
                 if (itemStack == null)
                     return false;
 
-                Method getItem = ReflectionUtil.findMethod(itemStack.getClass(),
-                        new String[] { "b", "getItem", "func_77973_b" });
-                if (getItem != null) {
-                    Object item = getItem.invoke(itemStack);
+                if (getStackItemMethod != null) {
+                    Object item = getStackItemMethod.invoke(itemStack);
                     if (item == null)
                         return false;
                     String className = item.getClass().getSimpleName().toLowerCase();
@@ -547,19 +577,13 @@ public class Vanilla189Player implements IPlayer {
             if (inventory == null)
                 return false;
 
-            if (getCurrentItemMethod == null) {
-                getCurrentItemMethod = ReflectionUtil.findMethod(inventory.getClass(),
-                        new String[] { "h", "getCurrentItem", "func_70448_g" });
-            }
             if (getCurrentItemMethod != null) {
                 Object itemStack = getCurrentItemMethod.invoke(inventory);
                 if (itemStack == null)
                     return false;
 
-                Method getItem = ReflectionUtil.findMethod(itemStack.getClass(),
-                        new String[] { "b", "getItem", "func_77973_b" });
-                if (getItem != null) {
-                    Object item = getItem.invoke(itemStack);
+                if (getStackItemMethod != null) {
+                    Object item = getStackItemMethod.invoke(itemStack);
                     if (item == null)
                         return false;
                     String className = item.getClass().getSimpleName().toLowerCase();
@@ -616,12 +640,8 @@ public class Vanilla189Player implements IPlayer {
         cacheFields();
         try {
             Object p = getPlayer();
-            if (p != null) {
-                Method swingMethod = ReflectionUtil.findMethod(p.getClass(),
-                        new String[] { "bw", "swingItem", "func_71038_i" });
-                if (swingMethod != null) {
-                    swingMethod.invoke(p);
-                }
+            if (p != null && swingItemMethod != null) {
+                swingItemMethod.invoke(p);
             }
         } catch (Exception ignored) {
         }
@@ -629,12 +649,11 @@ public class Vanilla189Player implements IPlayer {
 
     @Override
     public void closeScreen() {
+        cacheFields();
         try {
             Object p = getPlayer();
-            if (p != null) {
-                Method m = ReflectionUtil.findMethod(p.getClass(), new String[] { "m", "closeScreen", "func_71053_j" });
-                if (m != null)
-                    m.invoke(p);
+            if (p != null && closeScreenMethod != null) {
+                closeScreenMethod.invoke(p);
             }
         } catch (Exception ignored) {
         }
@@ -642,15 +661,13 @@ public class Vanilla189Player implements IPlayer {
     
     @Override
     public com.hades.client.api.interfaces.IItemStack getHeldItem() {
+        cacheFields();
         try {
             Object rawPlayer = getRaw();
-            if (rawPlayer != null) {
-                java.lang.reflect.Method method = com.hades.client.util.ReflectionUtil.findMethod(rawPlayer.getClass(), new String[]{"bz", "getCurrentEquippedItem", "func_70694_bm"});
-                if (method != null) {
-                    Object itemStack = method.invoke(rawPlayer);
-                    if (itemStack != null) {
-                        return new com.hades.client.api.interfaces.IItemStack(itemStack);
-                    }
+            if (rawPlayer != null && getCurrentEquippedItemMethod != null) {
+                Object itemStack = getCurrentEquippedItemMethod.invoke(rawPlayer);
+                if (itemStack != null) {
+                    return new com.hades.client.api.interfaces.IItemStack(itemStack);
                 }
             }
         } catch (Exception ignored) {}

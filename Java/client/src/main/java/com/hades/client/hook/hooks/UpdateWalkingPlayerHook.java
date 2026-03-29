@@ -11,9 +11,9 @@ import java.lang.reflect.Field;
  * Hooks EntityPlayerSP.onUpdateWalkingPlayer (bew.p).
  *
  * This method runs EVERY tick and is responsible for:
- *   1. Comparing isSprinting() with serverSprintState and sending C0B packets
- *   2. Comparing isSneaking() with serverSneakState and sending C0B packets
- *   3. Sending C03 position/look packets
+ * 1. Comparing isSprinting() with serverSprintState and sending C0B packets
+ * 2. Comparing isSneaking() with serverSneakState and sending C0B packets
+ * 3. Sending C03 position/look packets
  *
  * CRITICAL FIX: Before vanilla's C0B sprint comparison runs, we detect if
  * the KillAura's aura yaw makes the player face sideways (forward ≤ 0).
@@ -27,8 +27,11 @@ public class UpdateWalkingPlayerHook {
     public static Field posXField, posYField, posZField;
     public static Field yawField, pitchField;
     public static Field onGroundField;
-    
-    /** EntityPlayerSP.lastReportedYaw / lastReportedPitch — used to force rot=true in C03 */
+
+    /**
+     * EntityPlayerSP.lastReportedYaw / lastReportedPitch — used to force rot=true
+     * in C03
+     */
     public static Field lastReportedYawField, lastReportedPitchField;
 
     public static float originalYaw, originalPitch;
@@ -36,10 +39,6 @@ public class UpdateWalkingPlayerHook {
     public static boolean originalOnGround;
 
     public static MotionEvent currentEvent;
-    
-    // Toggle for varying the micro-jitter each tick to natively force C06 rotation packets
-    public static boolean jitterToggle = false;
-
     /**
      * When true, onExit will NOT restore the original yaw/pitch.
      * This allows non-silent rotation modules (KillAura with silent=false)
@@ -61,15 +60,22 @@ public class UpdateWalkingPlayerHook {
                 pitchField = ReflectionUtil.findField(entityClass, "z", "rotationPitch", "field_70125_A");
                 onGroundField = ReflectionUtil.findField(entityClass, "C", "onGround", "field_70122_E");
 
-                if (posXField != null) posXField.setAccessible(true);
-                if (posYField != null) posYField.setAccessible(true);
-                if (posZField != null) posZField.setAccessible(true);
-                if (yawField != null) yawField.setAccessible(true);
-                if (pitchField != null) pitchField.setAccessible(true);
-                if (onGroundField != null) onGroundField.setAccessible(true);
+                if (posXField != null)
+                    posXField.setAccessible(true);
+                if (posYField != null)
+                    posYField.setAccessible(true);
+                if (posZField != null)
+                    posZField.setAccessible(true);
+                if (yawField != null)
+                    yawField.setAccessible(true);
+                if (pitchField != null)
+                    pitchField.setAccessible(true);
+                if (onGroundField != null)
+                    onGroundField.setAccessible(true);
             }
 
-            if (posXField == null) return;
+            if (posXField == null)
+                return;
 
             // DON'T restore visual yaw here! Let the entity keep auraYaw
             // that physics just used. This ensures:
@@ -85,30 +91,22 @@ public class UpdateWalkingPlayerHook {
             originalOnGround = onGroundField.getBoolean(player);
 
             if (MoveEntityWithHeadingHook.droppedSprintForSideways) {
-                // Ensure LabyMod didn't reactivate sprint between physics and packet generation!
+                // Ensure LabyMod didn't reactivate sprint between physics and packet
+                // generation!
                 try {
                     if (MoveEntityWithHeadingHook.setFlagMethod != null) {
                         MoveEntityWithHeadingHook.setFlagMethod.invoke(player, 3, false);
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
 
-            currentEvent = new MotionEvent(MotionEvent.State.PRE, originalX, originalY, originalZ, originalYaw, originalPitch, originalOnGround);
+            currentEvent = new MotionEvent(MotionEvent.State.PRE, originalX, originalY, originalZ, originalYaw,
+                    originalPitch, originalOnGround);
             HadesClient.getInstance().getEventBus().post(currentEvent);
 
-            // CRITICAL: Force rot=true in Vanilla's C03 packet decision logic.
-            // Vanilla sends C04 (no rotation) when rotationYaw == lastReportedYaw && rotationPitch == lastReportedPitch.
-            // When rotations are identical across ticks, GrimAC raytraces with stale visual rotation data causing RotationPlace/Simulation flags.
-            // Fix: Apply a micro-jitter (±0.001) that alternates per tick. This guarantees d3 != 0 || d4 != 0, forcing C06.
-            jitterToggle = !jitterToggle;
             float packetYaw = currentEvent.getYaw();
             float packetPitch = currentEvent.getPitch();
-
-            if (packetYaw != originalYaw || packetPitch != originalPitch) {
-                float jitter = jitterToggle ? 0.001f : -0.001f;
-                packetYaw += jitter;
-                packetPitch += jitter;
-            }
 
             // Apply potentially modified values for the packet
             posXField.setDouble(player, currentEvent.getX());
@@ -118,13 +116,15 @@ public class UpdateWalkingPlayerHook {
             pitchField.setFloat(player, packetPitch);
             onGroundField.setBoolean(player, currentEvent.isOnGround());
 
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     @Advice.OnMethodExit
     public static void onExit(@Advice.This Object player) {
         try {
-            if (currentEvent == null || posXField == null) return;
+            if (currentEvent == null || posXField == null)
+                return;
 
             // Always restore position and onGround
             posXField.setDouble(player, originalX);
@@ -146,19 +146,22 @@ public class UpdateWalkingPlayerHook {
             }
 
             // Fire POST event
-            MotionEvent postEvent = new MotionEvent(MotionEvent.State.POST, currentEvent.getX(), currentEvent.getY(), currentEvent.getZ(), currentEvent.getYaw(), currentEvent.getPitch(), currentEvent.isOnGround());
+            MotionEvent postEvent = new MotionEvent(MotionEvent.State.POST, currentEvent.getX(), currentEvent.getY(),
+                    currentEvent.getZ(), currentEvent.getYaw(), currentEvent.getPitch(), currentEvent.isOnGround());
             HadesClient.getInstance().getEventBus().post(postEvent);
-            
+
             // Restore sprint after C0B + C03 packets are sent.
-            // MoveEntityWithHeadingHook dropped sprint for walk-speed physics when sideways.
+            // MoveEntityWithHeadingHook dropped sprint for walk-speed physics when
+            // sideways.
             // The C0B STOP_SPRINTING was sent during this method. Now we restore sprint
             // so the player doesn't visually slow down on the next tick.
             if (MoveEntityWithHeadingHook.droppedSprintForSideways) {
                 com.hades.client.api.HadesAPI.player.setSprinting(true);
                 MoveEntityWithHeadingHook.droppedSprintForSideways = false;
             }
-            
+
             currentEvent = null;
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 }

@@ -56,7 +56,7 @@ public class KillAura extends Module {
     private int currentDelay;
     private final Random random = new Random();
     private long lastDebugLog = 0;
-    
+    private int tickCounter = 0;
 
 
     // ── Session Randomization (Polar ML bypass) ──
@@ -99,8 +99,7 @@ public class KillAura extends Module {
         super.onEnable();
         currentTarget = null;
         hasRotationState = false;
-
-
+        tickCounter = 0;
         // ── Session Randomization: vary speeds per-enable to defeat Polar ML ──
         sessionYawMod = 1.0f + (random.nextFloat() * 0.30f - 0.15f);   // ±15%
         sessionPitchMod = 1.0f + (random.nextFloat() * 0.20f - 0.10f); // ±10%
@@ -221,6 +220,11 @@ public class KillAura extends Module {
             lastYaw = newRots[0];
             lastPitch = Math.max(-90f, Math.min(90f, newRots[1]));
             
+            // Jitter to force Vanilla C06 packets synchronously with physics engine
+            float jitter = tickCounter++ % 2 == 0 ? 0.001f : -0.001f;
+            lastYaw += jitter;
+            lastPitch += jitter;
+            
             applyRotations(lastYaw, lastPitch);
         }
 
@@ -301,17 +305,6 @@ public class KillAura extends Module {
         double maxY = ty + target.getHeight() + border;
         double minZ = tz - width - border;
         double maxZ = tz + width + border;
-
-        // Expand AABB along the target's velocity vector so the ray check
-        // covers both the current and predicted positions. This fixes the
-        // mismatch where faceEntityCustom aims at (pos+velocity) but
-        // this check was testing against the raw position.
-        double velX = target.getX() - target.getPrevX();
-        double velY = target.getY() - target.getPrevY();
-        double velZ = target.getZ() - target.getPrevZ();
-        if (velX < 0) minX += velX; else maxX += velX;
-        if (velY < 0) minY += velY; else maxY += velY;
-        if (velZ < 0) minZ += velZ; else maxZ += velZ;
 
         return RotationUtil.isRayIntersectingAABB(
             HadesAPI.player.getX(), 

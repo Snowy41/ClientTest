@@ -12,6 +12,8 @@ import com.hades.client.api.HadesAPI;
 import com.hades.client.gui.clickgui.theme.Theme;
 import com.hades.client.module.Module;
 import com.hades.client.gui.clickgui.component.MultiSelectScreenComponent;
+import com.hades.client.gui.clickgui.component.AccountScreenComponent;
+import com.hades.client.gui.clickgui.component.ProxyScreenComponent;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +23,8 @@ public class ClickGUI {
     private final TabSelector tabSelector;
     private final ConfigScreenComponent configScreen = new ConfigScreenComponent();
     private final ThemeScreenComponent themeScreen = new ThemeScreenComponent();
+    private final AccountScreenComponent accountScreen = new AccountScreenComponent();
+    private final ProxyScreenComponent proxyScreen = new ProxyScreenComponent();
     private final ProfileScreenComponent profileScreen = new ProfileScreenComponent();
     private final HudScreenComponent hudScreen = new HudScreenComponent();
     private Module.Category activeCategory = Module.Category.COMBAT;
@@ -28,6 +32,8 @@ public class ClickGUI {
     private boolean showHudScreen = false;
     private boolean showConfigScreen = false;
     private boolean showThemeScreen = false;
+    private boolean showAccountScreen = false;
+    private boolean showProxyScreen = false;
     private boolean showProfileScreen = false;
 
     private final MultiSelectScreenComponent multiSelectScreen = new MultiSelectScreenComponent();
@@ -38,7 +44,7 @@ public class ClickGUI {
 
     public ClickGUI() {
         tabSelector = new TabSelector(activeCategory, this::setActiveCategory);
-        sidebar = new Sidebar(this::onHudClicked, this::onConfigsClicked, this::onThemeClicked, this::onProfileClicked);
+        sidebar = new Sidebar(this::onHudClicked, this::onConfigsClicked, this::onThemeClicked, this::onAccountClicked, this::onProxyClicked, this::onProfileClicked);
     }
 
     private void setActiveCategory(Module.Category category) {
@@ -46,6 +52,8 @@ public class ClickGUI {
         this.showHudScreen = false;
         this.showConfigScreen = false; 
         this.showThemeScreen = false;
+        this.showAccountScreen = false;
+        this.showProxyScreen = false;
         this.showProfileScreen = false;
         tabSelector.setActiveCategory(category);
     }
@@ -54,6 +62,8 @@ public class ClickGUI {
         showHudScreen = !showHudScreen;
         showConfigScreen = false;
         showThemeScreen = false;
+        showAccountScreen = false;
+        showProxyScreen = false;
         showProfileScreen = false;
     }
 
@@ -61,6 +71,8 @@ public class ClickGUI {
         showConfigScreen = !showConfigScreen;
         showHudScreen = false;
         showThemeScreen = false;
+        showAccountScreen = false;
+        showProxyScreen = false;
         showProfileScreen = false;
     }
 
@@ -68,14 +80,36 @@ public class ClickGUI {
         showThemeScreen = !showThemeScreen;
         showHudScreen = false;
         showConfigScreen = false;
+        showAccountScreen = false;
+        showProxyScreen = false;
+        showProfileScreen = false;
+    }
+
+    private void onAccountClicked() {
+        showAccountScreen = !showAccountScreen;
+        showThemeScreen = false;
+        showHudScreen = false;
+        showConfigScreen = false;
+        showProxyScreen = false;
+        showProfileScreen = false;
+    }
+
+    private void onProxyClicked() {
+        showProxyScreen = !showProxyScreen;
+        showAccountScreen = false;
+        showThemeScreen = false;
+        showHudScreen = false;
+        showConfigScreen = false;
         showProfileScreen = false;
     }
 
     private void onProfileClicked() {
         showProfileScreen = !showProfileScreen;
+        showProxyScreen = false;
         showHudScreen = false;
         showConfigScreen = false;
         showThemeScreen = false;
+        showAccountScreen = false;
     }
 
     // Window position & drag
@@ -165,7 +199,7 @@ public class ClickGUI {
         sidebar.setPosition(windowX, windowY);
         sidebar.setSize(Theme.SIDEBAR_WIDTH, windowHeight);
         sidebar.setVisible(true);
-        sidebar.setActiveState(showHudScreen, showConfigScreen, showThemeScreen, showProfileScreen);
+        sidebar.setActiveState(showHudScreen, showConfigScreen, showThemeScreen, showAccountScreen, showProxyScreen, showProfileScreen);
         sidebar.render(mouseX, mouseY, partialTicks);
 
         float tabsX = windowX + Theme.SIDEBAR_WIDTH + Theme.PADDING;
@@ -193,7 +227,7 @@ public class ClickGUI {
         float contentWidth = windowWidth - Theme.SIDEBAR_WIDTH - Theme.PADDING * 2;
         float contentHeight = (windowY + windowHeight) - contentY - Theme.PADDING;
 
-        boolean hidePanels = showHudScreen || showConfigScreen || showThemeScreen || showProfileScreen;
+        boolean hidePanels = showHudScreen || showConfigScreen || showThemeScreen || showAccountScreen || showProxyScreen || showProfileScreen;
 
         if (showHudScreen) {
             hudScreen.setPosition(contentX, contentY);
@@ -220,6 +254,24 @@ public class ClickGUI {
             themeScreen.render(mouseX, mouseY, partialTicks);
         } else {
             themeScreen.setVisible(false);
+        }
+
+        if (showAccountScreen) {
+            accountScreen.setPosition(contentX, contentY);
+            accountScreen.setSize(contentWidth, contentHeight);
+            accountScreen.setVisible(true);
+            accountScreen.render(mouseX, mouseY, partialTicks);
+        } else {
+            accountScreen.setVisible(false);
+        }
+
+        if (showProxyScreen) {
+            proxyScreen.setPosition(contentX, contentY);
+            proxyScreen.setSize(contentWidth, contentHeight);
+            proxyScreen.setVisible(true);
+            proxyScreen.render(mouseX, mouseY, partialTicks);
+        } else {
+            proxyScreen.setVisible(false);
         }
 
         if (showProfileScreen) {
@@ -274,6 +326,10 @@ public class ClickGUI {
             configScreen.mouseClicked(mouseX, mouseY, button);
         } else if (showThemeScreen) {
             themeScreen.mouseClicked(mouseX, mouseY, button);
+        } else if (showAccountScreen) {
+            accountScreen.mouseClicked(mouseX, mouseY, button);
+        } else if (showProxyScreen) {
+            proxyScreen.mouseClicked(mouseX, mouseY, button);
         } else if (showProfileScreen) {
             profileScreen.mouseClicked(mouseX, mouseY, button);
         } else {
@@ -303,6 +359,10 @@ public class ClickGUI {
             configScreen.mouseReleased(mouseX, mouseY, button);
         } else if (showThemeScreen) {
             themeScreen.mouseReleased(mouseX, mouseY, button);
+        } else if (showAccountScreen) {
+            accountScreen.mouseReleased(mouseX, mouseY, button);
+        } else if (showProxyScreen) {
+            proxyScreen.mouseReleased(mouseX, mouseY, button);
         } else if (showProfileScreen) {
             profileScreen.mouseReleased(mouseX, mouseY, button);
         } else {
@@ -326,10 +386,12 @@ public class ClickGUI {
         }
 
         if (keyCode == 1) { // ESC
-            if (showHudScreen || showConfigScreen || showThemeScreen || showProfileScreen) {
+            if (showHudScreen || showConfigScreen || showThemeScreen || showAccountScreen || showProxyScreen || showProfileScreen) {
                 showHudScreen = false;
                 showConfigScreen = false;
                 showThemeScreen = false;
+                showAccountScreen = false;
+                showProxyScreen = false;
                 showProfileScreen = false;
                 return;
             }
@@ -342,6 +404,10 @@ public class ClickGUI {
             configScreen.keyTyped(typedChar, keyCode);
         } else if (showThemeScreen) {
             themeScreen.keyTyped(typedChar, keyCode);
+        } else if (showAccountScreen) {
+            accountScreen.keyTyped(typedChar, keyCode);
+        } else if (showProxyScreen) {
+            proxyScreen.keyTyped(typedChar, keyCode);
         } else if (showProfileScreen) {
             profileScreen.keyTyped(typedChar, keyCode);
         } else {
@@ -366,6 +432,10 @@ public class ClickGUI {
             configScreen.scroll(amount); // Config screen takes up full space anyway
         } else if (showThemeScreen) {
             themeScreen.scroll(amount);
+        } else if (showAccountScreen) {
+            accountScreen.scroll(amount);
+        } else if (showProxyScreen) {
+            proxyScreen.scroll(amount);
         } else if (showProfileScreen) {
             profileScreen.scroll(amount);
         } else {

@@ -1,6 +1,6 @@
 package com.hades.client.render;
 
-import java.lang.reflect.Method;
+import org.lwjgl.opengl.GL11;
 
 /**
  * Manages OpenGL state save/restore using LWJGL GL11 directly.
@@ -10,96 +10,32 @@ public class GLStateManager {
 
     // GL constants
     public static final int GL_ALL_ATTRIB_BITS = 0x000FFFFF;
-    public static final int GL_TEXTURE_2D = 0x0DE1;
-    public static final int GL_BLEND = 0x0BE2;
-    public static final int GL_SRC_ALPHA = 0x0302;
-    public static final int GL_ONE_MINUS_SRC_ALPHA = 0x0303;
-    public static final int GL_DEPTH_TEST = 0x0B71;
-    public static final int GL_SCISSOR_TEST = 0x0C11;
-    public static final int GL_LINE_SMOOTH = 0x0B20;
-    public static final int GL_QUADS = 0x0007;
-    public static final int GL_TRIANGLE_FAN = 0x0006;
-    public static final int GL_LINES = 0x0001;
-    public static final int GL_SMOOTH = 0x1D01;
-    public static final int GL_FLAT = 0x1D00;
-    public static final int GL_PROJECTION = 0x1701;
-    public static final int GL_MODELVIEW = 0x1700;
-    public static final int GL_RGBA = 0x1908;
-    public static final int GL_UNSIGNED_BYTE = 0x1401;
-    public static final int GL_TEXTURE_MIN_FILTER = 0x2801;
-    public static final int GL_TEXTURE_MAG_FILTER = 0x2800;
-    public static final int GL_LINEAR = 0x2601;
-
-    // Cached GL methods
-    private static Class<?> gl11;
-    private static Method glPushMatrix, glPopMatrix;
-    private static Method glPushAttrib, glPopAttrib;
-    private static Method glEnable, glDisable;
-    private static Method glBegin, glEnd;
-    private static Method glVertex2f, glVertex3d;
-    private static Method glColor4f;
-    private static Method glBlendFunc;
-    private static Method glLineWidth;
-    private static Method glShadeModel;
-    private static Method glTexCoord2f;
-    private static Method glBindTexture;
-    private static Method glGenTextures;
-    private static Method glTexParameteri;
-    private static Method glTexImage2D;
-    private static Method glScissor;
-    private static Method glMatrixMode, glLoadIdentity, glOrtho;
-    private static Method glTranslatef;
-    private static Method glColorMask;
+    public static final int GL_TEXTURE_2D = GL11.GL_TEXTURE_2D;
+    public static final int GL_BLEND = GL11.GL_BLEND;
+    public static final int GL_SRC_ALPHA = GL11.GL_SRC_ALPHA;
+    public static final int GL_ONE_MINUS_SRC_ALPHA = GL11.GL_ONE_MINUS_SRC_ALPHA;
+    public static final int GL_DEPTH_TEST = GL11.GL_DEPTH_TEST;
+    public static final int GL_SCISSOR_TEST = GL11.GL_SCISSOR_TEST;
+    public static final int GL_LINE_SMOOTH = GL11.GL_LINE_SMOOTH;
+    public static final int GL_QUADS = GL11.GL_QUADS;
+    public static final int GL_TRIANGLE_FAN = GL11.GL_TRIANGLE_FAN;
+    public static final int GL_LINES = GL11.GL_LINES;
+    public static final int GL_SMOOTH = GL11.GL_SMOOTH;
+    public static final int GL_FLAT = GL11.GL_FLAT;
+    public static final int GL_PROJECTION = GL11.GL_PROJECTION;
+    public static final int GL_MODELVIEW = GL11.GL_MODELVIEW;
+    public static final int GL_RGBA = GL11.GL_RGBA;
+    public static final int GL_UNSIGNED_BYTE = GL11.GL_UNSIGNED_BYTE;
+    public static final int GL_TEXTURE_MIN_FILTER = GL11.GL_TEXTURE_MIN_FILTER;
+    public static final int GL_TEXTURE_MAG_FILTER = GL11.GL_TEXTURE_MAG_FILTER;
+    public static final int GL_LINEAR = GL11.GL_LINEAR;
 
     private static boolean initialized = false;
 
     public static boolean init() {
-        if (initialized)
-            return true;
-        try {
-            ClassLoader cl = Thread.currentThread().getContextClassLoader();
-            if (cl == null)
-                cl = GLStateManager.class.getClassLoader();
-            gl11 = Class.forName("org.lwjgl.opengl.GL11", true, cl);
-
-            glPushMatrix = gl11.getMethod("glPushMatrix");
-            glPopMatrix = gl11.getMethod("glPopMatrix");
-            glPushAttrib = gl11.getMethod("glPushAttrib", int.class);
-            glPopAttrib = gl11.getMethod("glPopAttrib");
-            glEnable = gl11.getMethod("glEnable", int.class);
-            glDisable = gl11.getMethod("glDisable", int.class);
-            glBegin = gl11.getMethod("glBegin", int.class);
-            glEnd = gl11.getMethod("glEnd");
-            glVertex2f = gl11.getMethod("glVertex2f", float.class, float.class);
-            glVertex3d = gl11.getMethod("glVertex3d", double.class, double.class, double.class);
-            glColor4f = gl11.getMethod("glColor4f", float.class, float.class, float.class, float.class);
-            glBlendFunc = gl11.getMethod("glBlendFunc", int.class, int.class);
-            glLineWidth = gl11.getMethod("glLineWidth", float.class);
-            glShadeModel = gl11.getMethod("glShadeModel", int.class);
-            glTexCoord2f = gl11.getMethod("glTexCoord2f", float.class, float.class);
-            glBindTexture = gl11.getMethod("glBindTexture", int.class, int.class);
-            glGenTextures = gl11.getMethod("glGenTextures");
-            glTexParameteri = gl11.getMethod("glTexParameteri", int.class, int.class, int.class);
-            glTexImage2d(gl11);
-            glScissor = gl11.getMethod("glScissor", int.class, int.class, int.class, int.class);
-            glMatrixMode = gl11.getMethod("glMatrixMode", int.class);
-            glLoadIdentity = gl11.getMethod("glLoadIdentity");
-            glOrtho = gl11.getMethod("glOrtho", double.class, double.class, double.class, double.class, double.class,
-                    double.class);
-            glTranslatef = gl11.getMethod("glTranslatef", float.class, float.class, float.class);
-            glColorMask = gl11.getMethod("glColorMask", boolean.class, boolean.class, boolean.class, boolean.class);
-
-            initialized = true;
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    private static void glTexImage2d(Class<?> gl11) throws NoSuchMethodException {
-        glTexImage2D = gl11.getMethod("glTexImage2D", int.class, int.class, int.class,
-                int.class, int.class, int.class, int.class, int.class, java.nio.ByteBuffer.class);
+        if (initialized) return true;
+        initialized = true;
+        return true;
     }
 
     // ══════════════════════════════════════════
@@ -110,191 +46,120 @@ public class GLStateManager {
      * Save full GL state. Call before any Hades rendering.
      */
     public static void save() {
-        if (!initialized && !init())
-            return;
-        try {
-            glPushAttrib.invoke(null, GL_ALL_ATTRIB_BITS);
-            glPushMatrix.invoke(null);
-        } catch (Exception ignored) {
-        }
+        if (!initialized && !init()) return;
+        GL11.glPushAttrib(GL_ALL_ATTRIB_BITS);
+        GL11.glPushMatrix();
     }
 
     /**
      * Restore full GL state. Call after Hades rendering.
      */
     public static void restore() {
-        if (!initialized)
-            return;
-        try {
-            glPopMatrix.invoke(null);
-            glPopAttrib.invoke(null);
-        } catch (Exception ignored) {
-        }
+        if (!initialized) return;
+        GL11.glPopMatrix();
+        GL11.glPopAttrib();
     }
 
     /**
      * Set up a clean 2D ortho projection for overlay rendering.
      */
     public static void setup2D(int width, int height) {
-        if (!initialized)
-            return;
-        try {
-            glMatrixMode.invoke(null, GL_PROJECTION);
-            glPushMatrix.invoke(null);
-            glLoadIdentity.invoke(null);
-            glOrtho.invoke(null, 0.0, (double) width, (double) height, 0.0, -1.0, 1.0);
-            glMatrixMode.invoke(null, GL_MODELVIEW);
-            glPushMatrix.invoke(null);
-            glLoadIdentity.invoke(null);
-        } catch (Exception ignored) {
-        }
+        if (!initialized) return;
+        GL11.glMatrixMode(GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0, (double) width, (double) height, 0.0, -1.0, 1.0);
+        GL11.glMatrixMode(GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
     }
 
     /**
      * Restore matrices after 2D rendering.
      */
     public static void restore2D() {
-        if (!initialized)
-            return;
-        try {
-            glMatrixMode.invoke(null, GL_PROJECTION);
-            glPopMatrix.invoke(null);
-            glMatrixMode.invoke(null, GL_MODELVIEW);
-            glPopMatrix.invoke(null);
-        } catch (Exception ignored) {
-        }
+        if (!initialized) return;
+        GL11.glMatrixMode(GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL_MODELVIEW);
+        GL11.glPopMatrix();
     }
 
     // ══════════════════════════════════════════
-    // Direct GL wrappers (much cleaner than RenderUtil's reflection)
+    // Direct GL wrappers (eliminating reflection)
     // ══════════════════════════════════════════
 
     public static void enable(int cap) {
-        try {
-            glEnable.invoke(null, cap);
-        } catch (Exception ignored) {
-        }
+        GL11.glEnable(cap);
     }
 
     public static void disable(int cap) {
-        try {
-            glDisable.invoke(null, cap);
-        } catch (Exception ignored) {
-        }
+        GL11.glDisable(cap);
     }
 
     public static void begin(int mode) {
-        try {
-            glBegin.invoke(null, mode);
-        } catch (Exception ignored) {
-        }
+        GL11.glBegin(mode);
     }
 
     public static void end() {
-        try {
-            glEnd.invoke(null);
-        } catch (Exception ignored) {
-        }
+        GL11.glEnd();
     }
 
     public static void vertex2f(float x, float y) {
-        try {
-            glVertex2f.invoke(null, x, y);
-        } catch (Exception ignored) {
-        }
+        GL11.glVertex2f(x, y);
     }
 
     public static void vertex3d(double x, double y, double z) {
-        try {
-            glVertex3d.invoke(null, x, y, z);
-        } catch (Exception ignored) {
-        }
+        GL11.glVertex3d(x, y, z);
     }
 
     public static void color4f(float r, float g, float b, float a) {
-        try {
-            glColor4f.invoke(null, r, g, b, a);
-        } catch (Exception ignored) {
-        }
+        GL11.glColor4f(r, g, b, a);
     }
 
     public static void blendFunc(int src, int dst) {
-        try {
-            glBlendFunc.invoke(null, src, dst);
-        } catch (Exception ignored) {
-        }
+        GL11.glBlendFunc(src, dst);
     }
 
     public static void lineWidth(float w) {
-        try {
-            glLineWidth.invoke(null, w);
-        } catch (Exception ignored) {
-        }
+        GL11.glLineWidth(w);
     }
 
     public static void shadeModel(int mode) {
-        try {
-            glShadeModel.invoke(null, mode);
-        } catch (Exception ignored) {
-        }
+        GL11.glShadeModel(mode);
     }
 
     public static void texCoord2f(float u, float v) {
-        try {
-            glTexCoord2f.invoke(null, u, v);
-        } catch (Exception ignored) {
-        }
+        GL11.glTexCoord2f(u, v);
     }
 
     public static void bindTexture(int target, int tex) {
-        try {
-            glBindTexture.invoke(null, target, tex);
-        } catch (Exception ignored) {
-        }
+        GL11.glBindTexture(target, tex);
     }
 
     public static int genTexture() {
-        try {
-            return (int) glGenTextures.invoke(null);
-        } catch (Exception e) {
-            return -1;
-        }
+        return GL11.glGenTextures();
     }
 
     public static void texParameteri(int target, int pname, int param) {
-        try {
-            glTexParameteri.invoke(null, target, pname, param);
-        } catch (Exception ignored) {
-        }
+        GL11.glTexParameteri(target, pname, param);
     }
 
     public static void texImage2D(int target, int level, int internal, int w, int h, int border, int fmt, int type,
             java.nio.ByteBuffer data) {
-        try {
-            glTexImage2D.invoke(null, target, level, internal, w, h, border, fmt, type, data);
-        } catch (Exception ignored) {
-        }
+        GL11.glTexImage2D(target, level, internal, w, h, border, fmt, type, data);
     }
 
     public static void scissor(int x, int y, int w, int h) {
-        try {
-            glScissor.invoke(null, x, y, w, h);
-        } catch (Exception ignored) {
-        }
+        GL11.glScissor(x, y, w, h);
     }
 
     public static void translate(float x, float y, float z) {
-        try {
-            glTranslatef.invoke(null, x, y, z);
-        } catch (Exception ignored) {
-        }
+        GL11.glTranslatef(x, y, z);
     }
 
     public static void colorMask(boolean r, boolean g, boolean b, boolean a) {
-        try {
-            glColorMask.invoke(null, r, g, b, a);
-        } catch (Exception ignored) {
-        }
+        GL11.glColorMask(r, g, b, a);
     }
 
     public static boolean isInitialized() {

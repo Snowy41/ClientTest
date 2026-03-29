@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Universal Hades VFS IDE</title>
+<style>
+    body { margin: 0; background: #0c0d12; color: #fff; font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+    
+    /* VFS Sidebar */
+    #sidebar { width: 250px; background: #12141c; border-right: 1px solid #1f2334; display: flex; flex-direction: column; }
+    .sidebar-header { padding: 15px; background: #151821; border-bottom: 1px solid #1f2334; display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-header h1 { font-size: 15px; margin: 0; color: #d0d7e6; }
+    
+    .file-btn { background: #4f5be8; color: #fff; border: none; padding: 6px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; text-align: center; }
+    .file-btn:hover { background: #626df0; }
+    label.file-btn { display: block; position: relative; overflow: hidden; }
+    label.file-btn input[type=file] { position: absolute; top:0; right:0; min-width: 100%; min-height: 100%; font-size: 100px; text-align: right; filter: alpha(opacity=0); opacity: 0; outline: none; background: white; cursor: inherit; display: block; }
+    
+    #file-tree { flex-grow: 1; overflow-y: auto; padding: 10px 5px; font-size: 13px; font-family: monospace; color: #abb2bf; }
+    .file-node { padding: 4px 8px; cursor: pointer; border-radius: 3px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-node:hover { background: #1f2334; }
+    .file-node.active { background: #2f364d; color: #fff; font-weight: bold; }
+    
+    /* IDE Area */
+    #center { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
+    #editor-header { padding: 8px 15px; background: #151821; border-bottom: 1px solid #1f2334; display: flex; justify-content: space-between; align-items: center; }
+    #current-file-label { font-size: 13px; color: #9bbbdc; font-family: monospace; }
+    
+    #editor-wrapper { position: relative; flex-grow: 1; width: 100%; background: #1b1e2b; overflow: hidden; }
+    #editor { position: absolute; top:0; left:0; width: 100%; height: 100%; margin: 0; padding: 15px; box-sizing: border-box; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.5; color: transparent; background: transparent; caret-color: #fff; z-index: 2; border: none; outline: none; white-space: pre; overflow-wrap: normal; overflow: auto; resize: none; tab-size: 4;}
+    #highlight-layer { position: absolute; top:0; left:0; width: 100%; height: 100%; margin: 0; padding: 15px; box-sizing: border-box; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.5; color: #abb2bf; background: #1b1e2b; z-index: 1; white-space: pre; overflow-wrap: normal; overflow: hidden; pointer-events: none; tab-size: 4; }
+    .ky { color: #c678dd; } .cl { color: #e5c07b; } .md { color: #61afef; } .nm { color: #d19a66; } .st { color: #98c379; } .cm { color: #5c6370; font-style: italic; }
+
+    /* Preview Canvas Area */
+    #right { width: 40%; display: flex; flex-direction: column; border-left: 1px solid #1f2334; background: radial-gradient(circle, #1a1e2f 0%, #0c0d12 100%); position: relative; }
+    #view-header { padding: 8px 15px; background: #151821; border-bottom: 1px solid #1f2334; display: flex; justify-content: space-between; align-items: center; }
+    select { background: #1f2334; color: #fff; border: 1px solid #32384a; border-radius: 4px; padding: 4px 8px; font-size: 12px; outline: none; }
+    canvas { width: 100%; height: 100%; cursor: crosshair; }
+    #instructions { position: absolute; bottom: 10px; right: 10px; color: rgba(155,187,220,0.5); font-size: 11px; pointer-events: none; }
+    #error-overlay { position: absolute; bottom: 20px; left: 20px; right: 20px; background: rgba(230, 60, 60, 0.9); border-radius: 6px; padding: 10px; font-family: monospace; font-size: 12px; display: none; color: white; border: 1px solid #ff6b6b; z-index: 10; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <h1>IDE VFS</h1>
+        <label class="file-btn">
+            Load 'java' Folder...
+            <input type="file" id="folderInput" webkitdirectory directory multiple onchange="handleFolderUpload()">
+        </label>
+        <button class="file-btn" onclick="injectDemoVFS()" style="background:#2a2f42;">Load Example VFS</button>
+    </div>
+    <div id="file-tree">
+        <div style="padding:10px; font-size:11px; color:#5c6370; text-align:center;">No files loaded.</div>
+    </div>
+</div>
+
+<div id="center">
+    <div id="editor-header">
+        <span id="current-file-label">Editing: [None]</span>
+        <button class="file-btn" onclick="compileVFS()" style="background:#55b57d;">Compile & Run VFS</button>
+    </div>
+    <div id="editor-wrapper">
+        <textarea id="editor" spellcheck="false" oninput="updateActiveFile(); updateHighlight(); debounceCompile();" onscroll="syncScroll()" onkeydown="handleTab(event)"></textarea>
+        <pre id="highlight-layer"><code id="highlight-code"></code></pre>
+    </div>
+</div>
+
+<div id="right">
+    <div id="view-header">
+        <div style="font-size:12px; font-weight:bold; color: #55b57d;" id="active-hook-label">Hook: [Auto-detecting...]</div>
+        <select id="viewSelect">
+            <option value="3D">Camera: 3D Freecam</option>
+            <option value="2D">Camera: 2D Screen</option>
+        </select>
+    </div>
+    <div style="flex-grow:1; position:relative;">
+        <canvas id="view" width="1024" height="1024"></canvas>
+        <div id="error-overlay"></div>
+        <div id="instructions">Drag to rotate • Scroll to zoom</div>
+    </div>
+</div>
+
+<!-- Core Engine -->
+<script id="HadesGL_Core">
+let gl, defaultProgram, posBuffer, colorBuffer, posAttrib, colorAttrib, mvpUniform;
+const Mat4 = {
+    create: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+    multiply: (a, b) => { let c = new Float32Array(16); for(let i=0;i<4;i++) for(let j=0;j<4;j++) c[i*4+j] = a[0*4+j]*b[i*4+0] + a[1*4+j]*b[i*4+1] + a[2*4+j]*b[i*4+2] + a[3*4+j]*b[i*4+3]; return c; },
+    translate: (m, x, y, z) => { let t = Mat4.create(); t[12]=x; t[13]=y; t[14]=z; return Mat4.multiply(m, t); },
+    scale: (m, x, y, z) => { let s = Mat4.create(); s[0]=x; s[5]=y; s[10]=z; return Mat4.multiply(m, s); },
+    rotateX: (m, rad) => { let s = Math.sin(rad), c = Math.cos(rad); let r = Mat4.create(); r[5]=c; r[6]=s; r[9]=-s; r[10]=c; return Mat4.multiply(m, r); },
+    rotateY: (m, rad) => { let s = Math.sin(rad), c = Math.cos(rad); let r = Mat4.create(); r[0]=c; r[2]=-s; r[8]=s; r[10]=c; return Mat4.multiply(m, r); },
+    rotateZ: (m, rad) => { let s = Math.sin(rad), c = Math.cos(rad); let r = Mat4.create(); r[0]=c; r[1]=s; r[4]=-s; r[5]=c; return Mat4.multiply(m, r); },
+    perspective: (fovy, aspect, near, far) => { let f=1.0/Math.tan(fovy/2), nf=1/(near-far); let p=new Float32Array(16); p[0]=f/aspect; p[5]=f; p[10]=(far+near)*nf; p[11]=-1; p[14]=(2*far*near)*nf; return p; },
+    ortho: (l, r, b, t, n, f) => { let lr=1/(l-r), bt=1/(b-t), nf=1/(n-f); let o=new Float32Array(16); o[0]=-2*lr; o[5]=-2*bt; o[10]=2*nf; o[12]=(l+r)*lr; o[13]=(t+b)*bt; o[14]=(f+n)*nf; o[15]=1; return o; }
+};
+const GL_MODE_MAP = { 0x0001: 1, 0x0002: 2, 0x0003: 3, 0x0004: 4, 0x0005: 5, 0x0006: 6, 0x0007: 4 };
+const GL11 = {
+    GL_LINES: 0x0001, GL_LINE_LOOP: 0x0002, GL_LINE_STRIP: 0x0003, GL_TRIANGLES: 0x0004, GL_TRIANGLE_STRIP: 0x0005, GL_TRIANGLE_FAN: 0x0006, GL_QUADS: 0x0007,
+    GL_BLEND: 0x0BE2, GL_DEPTH_TEST: 0x0B71, GL_CULL_FACE: 0x0B44, GL_SRC_ALPHA: 0x0302, GL_ONE_MINUS_SRC_ALPHA: 0x0303, GL_ONE: 1, GL_ALL_ATTRIB_BITS: 0,
+    GL_TEXTURE_2D: 0, GL_LINE_SMOOTH: 0, GL_LINE_SMOOTH_HINT: 0, GL_NICEST: 0, GL_POLYGON_SMOOTH: 0, GL_POLYGON_SMOOTH_HINT: 0, GL_LIGHTING: 0,
+    
+    matrixStack: [], modelViewMatrix: Mat4.create(), projectionMatrix: Mat4.create(), color: [1, 1, 1, 1], mode: -1, verts: [], colors: [],
+    glMatrixMode: function() {}, glLoadIdentity: function() { this.modelViewMatrix = Mat4.create(); },
+    glPushMatrix: function() { this.matrixStack.push(new Float32Array(this.modelViewMatrix)); },
+    glPopMatrix: function() { if(this.matrixStack.length > 0) this.modelViewMatrix = this.matrixStack.pop(); },
+    glTranslatef: function(x, y, z) { this.modelViewMatrix = Mat4.translate(this.modelViewMatrix, x, y, z); }, glTranslated: function(x, y, z) { this.glTranslatef(x,y,z); },
+    glRotatef: function(angle, x, y, z) { let rad = angle * Math.PI / 180; if(x!==0) this.modelViewMatrix = Mat4.rotateX(this.modelViewMatrix, rad*Math.sign(x)); if(y!==0) this.modelViewMatrix = Mat4.rotateY(this.modelViewMatrix, rad*Math.sign(y)); if(z!==0) this.modelViewMatrix = Mat4.rotateZ(this.modelViewMatrix, rad*Math.sign(z)); },
+    glScalef: function(x, y, z) { this.modelViewMatrix = Mat4.scale(this.modelViewMatrix, x, y, z); },
+    glColor4f: function(r, g, b, a) { this.color = [r, g, b, a]; }, glColor3f: function(r, g, b) { this.color = [r, g, b, 1.0]; },
+    glLineWidth: function(w) { gl.lineWidth(w); }, glEnable: function(cap) { if(cap===this.GL_DEPTH_TEST) gl.enable(gl.DEPTH_TEST); },
+    glDisable: function(cap) { if(cap===this.GL_DEPTH_TEST) gl.disable(gl.DEPTH_TEST); }, glBlendFunc: function() {}, glDepthMask: function() {},
+    glBegin: function(mode) { this.mode = mode; this.verts = []; this.colors = []; },
+    glVertex2d: function(x, y) { this.glVertex3f(x, y, 0); }, glVertex2f: function(x, y) { this.glVertex3f(x, y, 0); }, glVertex3d: function(x, y, z) { this.glVertex3f(x, y, z); },
+    glVertex3f: function(x, y, z) { this.verts.push(x, y, z); this.colors.push(...this.color); },
+    glEnd: function() {
+        if (this.verts.length === 0) return; let drawMode = GL_MODE_MAP[this.mode]; let vArray = this.verts, cArray = this.colors;
+        if (this.mode === this.GL_QUADS) {
+            let tV=[], tC=[];
+            for (let i=0; i<this.verts.length/3; i+=4) { let v=i*3, c=i*4; tV.push(vArray[v],vArray[v+1],vArray[v+2],vArray[v+3],vArray[v+4],vArray[v+5],vArray[v+6],vArray[v+7],vArray[v+8]); tC.push(cArray[c],cArray[c+1],cArray[c+2],cArray[c+3],cArray[c+4],cArray[c+5],cArray[c+6],cArray[c+7],cArray[c+8],cArray[c+9],cArray[c+10],cArray[c+11]); tV.push(vArray[v],vArray[v+1],vArray[v+2],vArray[v+6],vArray[v+7],vArray[v+8],vArray[v+9],vArray[v+10],vArray[v+11]); tC.push(cArray[c],cArray[c+1],cArray[c+2],cArray[c+3],cArray[c+8],cArray[c+9],cArray[c+10],cArray[c+11],cArray[c+12],cArray[c+13],cArray[c+14],cArray[c+15]); }
+            vArray=tV; cArray=tC; drawMode=gl.TRIANGLES;
+        }
+        gl.useProgram(defaultProgram); gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vArray), gl.STATIC_DRAW); gl.vertexAttribPointer(posAttrib, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cArray), gl.STATIC_DRAW); gl.vertexAttribPointer(colorAttrib, 4, gl.FLOAT, false, 0, 0);
+        let mvp = Mat4.multiply(this.projectionMatrix, this.modelViewMatrix); gl.uniformMatrix4fv(mvpUniform, false, mvp);
+        gl.drawArrays(drawMode, 0, vArray.length / 3);
+    }, glPushAttrib: function() {}, glPopAttrib: function() {}, glHint: function() {}
+};
+function initHadesGL(canv) {
+    gl = canv.getContext('webgl', { antialias: true, alpha: true }); if(!gl) return;
+    const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, `attribute vec3 aPos; attribute vec4 aColor; uniform mat4 uMVP; varying vec4 vColor; void main() { gl_Position = uMVP * vec4(aPos, 1.0); vColor = aColor; }`); gl.compileShader(vs);
+    const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, `precision mediump float; varying vec4 vColor; void main() { gl_FragColor = vColor; }`); gl.compileShader(fs);
+    defaultProgram = gl.createProgram(); gl.attachShader(defaultProgram, vs); gl.attachShader(defaultProgram, fs); gl.linkProgram(defaultProgram); gl.useProgram(defaultProgram);
+    posAttrib = gl.getAttribLocation(defaultProgram, 'aPos'); colorAttrib = gl.getAttribLocation(defaultProgram, 'aColor'); mvpUniform = gl.getUniformLocation(defaultProgram, 'uMVP');
+    gl.enableVertexAttribArray(posAttrib); gl.enableVertexAttribArray(colorAttrib);
+    posBuffer = gl.createBuffer(); colorBuffer = gl.createBuffer(); gl.clearColor(0.0, 0.0, 0.0, 0.0);
+}
+String.prototype.equals = function(s) { return this == s; };
+// WebGL overhead end
+</script>
+
+<script>
+// ============================================
+// Virtual File System & Transpiler
+// ============================================
+const VFS = {};
+let activeFilePath = null;
+
+// Mock APIs to safely parse their exact Client Code calls
+window.HadesAPI = {
+    renderer: { getRenderPosX: ()=>0, getRenderPosY: ()=>0, getRenderPosZ: ()=>0 },
+    player: { getRaw: ()=>1, getYaw: ()=>0, getPitch: ()=>0 },
+    world: { getLoadedEntities: () => [{ getRaw:()=>2, getX:()=>0, getY:()=>0, getZ:()=>0, getLastTickX:()=>0, getLastTickY:()=>0, getLastTickZ:()=>0, getWidth:()=>0.6, getHeight:()=>1.8, isPlayer:()=>true, isLiving:()=>true, isInvisible:()=>false, getHealth:()=>20 }] },
+    mc: { isInGame: () => true }
+};
+
+function handleFolderUpload() {
+    let files = document.getElementById('folderInput').files;
+    let pending = 0;
+    for(let i=0; i<files.length; i++) {
+        let file = files[i];
+        if(!file.name.endsWith('.java')) continue;
+        pending++;
+        let reader = new FileReader();
+        reader.onload = function(e) {
+            let content = e.target.result;
+            // Determine Java Package structure so VFS layout perfectly matches the Client
+            let pkgMatch = content.match(/package\s+([\w.]+)\s*;/);
+            let pkg = pkgMatch ? pkgMatch[1].replace(/\./g, '/') : "default";
+            VFS[pkg + "/" + file.name] = content;
+            pending--;
+            if(pending === 0) { renderFileTree(); compileVFS(); }
+        };
+        reader.readAsText(file);
+    }
+}
+
+function renderFileTree() {
+    let tree = document.getElementById('file-tree');
+    tree.innerHTML = '';
+    let paths = Object.keys(VFS).sort();
+    if(paths.length === 0) tree.innerHTML = '<div style="padding:10px; font-size:11px; color:#5c6370; text-align:center;">No files loaded.</div>';
+    
+    paths.forEach(p => {
+        let div = document.createElement('div');
+        div.className = 'file-node';
+        div.textContent = p.split('/').pop();
+        div.title = p;
+        if(p === activeFilePath) div.classList.add('active');
+        div.onclick = () => { loadFileIntoEditor(p); renderFileTree(); };
+        tree.appendChild(div);
+    });
+}
+
+function loadFileIntoEditor(path) {
+    activeFilePath = path;
+    document.getElementById('editor').value = VFS[path];
+    document.getElementById('current-file-label').innerText = 'Editing: ' + path.split('/').pop();
+    updateHighlight();
+    
+    // Smart Auto-Discovery Hook
+    let code = VFS[path] || "";
+    let clsMatch = code.match(/(?:class)\s+(\w+)/);
+    if(clsMatch) {
+         let clsName = clsMatch[1];
+         if (code.includes("onRender3D") || code.includes("onRender2D")) {
+             activeRenderHookObject = clsName;
+             document.getElementById('active-hook-label').innerText = "Running: " + clsName;
+         }
+    }
+}
+
+function updateActiveFile() {
+    if(activeFilePath) {
+        VFS[activeFilePath] = document.getElementById('editor').value;
+    }
+}
+
+// ============================================
+// Naive Java -> JS Cross-Compiler
+// ============================================
+function javaTranspile(java) {
+    let js = java.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    js = js.replace(/package\s+[\w.]+;/g, '');
+    js = js.replace(/import\s+[\w.]+;/g, '');
+    js = js.replace(/@\w+(\([\s\S]*?\))?/g, ''); // strip annotations
+    
+    // Class instantiation wrapper
+    js = js.replace(/\b(?:public|private|protected|final|abstract)\s+class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{/g, 'class $1 {');
+    
+    // Class properties and methods: static and type stripping
+    js = js.replace(/\b(?:public|private|protected|final|volatile|transient|native|synchronized|abstract)\b\s+/g, '');
+    
+    // Remove Generic Arrows (nested)
+    while(js.match(/<\s*[\w\.\?\[\]]+\s*(,\s*[\w\.\?\[\]]+\s*)*>/)) {
+        js = js.replace(/<\s*[\w\.\?\[\]]+\s*(,\s*[\w\.\?\[\]]+\s*)*>/g, '');
+    }
+    
+    // Convert method signatures: Type name(Args x) -> name(x)
+    // Simplify param Types: (int id, String name) -> (id, name)
+    js = js.replace(/\(([^)]+)\)/g, function(match, inner) {
+        if(inner.indexOf('==')>-1 || (inner.indexOf('=')>-1 && !inner.includes(','))) return match; // prevent stripping 'if' logic 
+        let np = inner.split(',').map(p => {
+            let parts = p.trim().split(/\s+/);
+            if(parts.length===0) return '';
+            return parts[parts.length-1].replace(/\[\]/g, ''); 
+        });
+        return '(' + np.join(', ') + ')';
+    });
+    
+    // Remove method return types: Type methodName( -> methodName(
+    js = js.replace(/\b([A-Za-z0-9_]+(?:\[\])*)\s+([A-Za-z0-9_]+)\s*\(/g, function(match, t, name) {
+        if(['return','if','while','for','switch','catch','new'].includes(t)) return match;
+        return `${name}(`;
+    });
+    
+    // Typecasts
+    js = js.replace(/\(\s*(?:int|float|double|boolean|String|long|char|byte|short|[A-Z][A-Za-z0-9_]*)(?:\[\])*\s*\)/g, '');
+    
+    // Float/double suffix
+    js = js.replace(/(^|[^a-zA-Z_0-9])(\d+(?:\.\d*)?|\.\d+)[fd]\b/gi, '$1$2');
+    
+    // Variables: Type x = -> let x =
+    js = js.replace(/\b(?:int|float|double|boolean|String|long|char|byte|short|[A-Z][A-Za-z0-9_]*)(?:\[\])*\s+([A-Za-z0-9_]+)\s*(=|;)/g, 'let $1 $2');
+    js = js.replace(/\bfor\s*\(\s*(?:[A-Za-z0-9_\[\]]+)\s+([A-Za-z0-9_]+)\s*:\s*(.*?)\s*\)/g, 'for(let $1 of $2)');
+
+    return js;
+}
+
+let CompiledClasses = {};
+
+function compileVFS() {
+    document.getElementById('error-overlay').style.display = 'none';
+    window.com = { hades: { client: {} } }; // Reset execution environment
+    CompiledClasses = {};
+    
+    for (let path in VFS) {
+        let code = VFS[path];
+        let pkgMatch = code.match(/package\s+([\w.]+)\s*;/);
+        let pkg = pkgMatch ? pkgMatch[1] : null;
+        let clsMatch = code.match(/(?:class|interface|enum)\s+(\w+)/);
+        if(!clsMatch) continue;
+        let clsName = clsMatch[1];
+        
+        try {
+            let js = javaTranspile(code);
+            let fullJs = `${js}\nreturn typeof ${clsName} !== 'undefined' ? ${clsName} : null;`;
+            let clsObj = new Function('GL11', 'HadesAPI', fullJs)(GL11, window.HadesAPI);
+            
+            if (clsObj) {
+                CompiledClasses[clsName] = clsObj;
+                if(pkg) {
+                    let scope = window;
+                    for(let p of pkg.split('.')) {
+                        scope[p] = scope[p] || {};
+                        scope = scope[p];
+                    }
+                    scope[clsName] = clsObj;
+                }
+            }
+        } catch(err) {
+            console.warn("Transpile err in " + path, err);
+        }
+    }
+}
+
+let compileTimer = null;
+function debounceCompile() { clearTimeout(compileTimer); compileTimer = setTimeout(compileVFS, 600); }
+
+// ============================================
+// CAMERA & ENGINE HOOKS
+// ============================================
+initHadesGL(document.getElementById('view'));
+
+let camYaw = 45, camPitch = -20, camDist = 6.0;
+let isDragging = false, lastMouseX, lastMouseY;
+const canvas = document.getElementById('view');
+canvas.addEventListener('mousedown', e => { isDragging=true; lastMouseX=e.clientX; lastMouseY=e.clientY; });
+document.addEventListener('mouseup', () => isDragging=false);
+document.addEventListener('mousemove', e => {
+    if(!isDragging) return; camYaw += (e.clientX-lastMouseX)*0.5; camPitch += (e.clientY-lastMouseY)*0.5;
+    if(camPitch>89) camPitch=89; if(camPitch<-89) camPitch=-89;
+    lastMouseX=e.clientX; lastMouseY=e.clientY;
+});
+canvas.addEventListener('wheel', e => { camDist+=e.deltaY*0.01; if(camDist<1) camDist=1; });
+
+let activeRenderHookObject = null;
+
+function renderLoop() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    let viewMode = document.getElementById('viewSelect').value;
+    GL11.glLoadIdentity();
+    
+    if (viewMode === "3D") {
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.projectionMatrix = Mat4.perspective(45 * Math.PI/180, canvas.width/canvas.height, 0.1, 1000.0);
+        GL11.glTranslatef(0, -1.0, -camDist);
+        GL11.glRotatef(camPitch, 1, 0, 0); GL11.glRotatef(camYaw, 0, 1, 0);
+        
+        // Grid
+        GL11.glColor4f(0.2, 0.2, 0.25, 1.0); GL11.glBegin(GL11.GL_LINES);
+        for(let i=-5; i<=5; i++) { GL11.glVertex3f(i, 0, -5); GL11.glVertex3f(i, 0, 5); GL11.glVertex3f(-5, 0, i); GL11.glVertex3f(5, 0, i); }
+        GL11.glEnd();
+    } else {
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.projectionMatrix = Mat4.ortho(0, canvas.width, canvas.height, 0, -1, 1);
+        GL11.glTranslatef(canvas.width/2, canvas.height/2, 0);
+    }
+    
+    // Execute Compiled VFS Code!
+    try {
+        if(window.activeRenderHookObject && CompiledClasses[window.activeRenderHookObject]) {
+            let instance = new CompiledClasses[window.activeRenderHookObject]();
+            if(instance.onRender3D && viewMode === "3D") {
+                GL11.glPushMatrix();
+                instance.onRender3D({ getPartialTicks:()=>1.0 });
+                GL11.glPopMatrix();
+            } else if (instance.onRender2D && viewMode === "2D") {
+                GL11.glPushMatrix();
+                instance.onRender2D({ getPartialTicks:()=>1.0 });
+                GL11.glPopMatrix();
+            }
+        }
+    } catch(err) {
+        document.getElementById('error-overlay').innerText = 'VFS Execution Error: ' + err.message;
+        document.getElementById('error-overlay').style.display = 'block';
+    }
+    
+    requestAnimationFrame(renderLoop);
+}
+
+// Helpers
+function injectDemoVFS() {
+    VFS["com/hades/client/util/RenderUtil.java"] = `package com.hades.client.util;
+public class RenderUtil {
+    public static void drawBatchedOutlinedEntityESP(double x, double y, double z, float w, float h, int c) {
+        float r = ((c >> 16) & 0xFF) / 255.0f;
+        float g = ((c >> 8) & 0xFF) / 255.0f;
+        float b = (c & 0xFF) / 255.0f;
+        
+        GL11.glPushMatrix();
+        GL11.glTranslatef((float)x, (float)y, (float)z);
+        GL11.glColor4f(r, g, b, 1.0f);
+        GL11.glLineWidth(2.5f);
+        
+        float w2 = w/2.0f;
+        GL11.glBegin(GL11.GL_LINE_LOOP);
+        GL11.glVertex3f(-w2, 0f, -w2); GL11.glVertex3f(w2, 0f, -w2);
+        GL11.glVertex3f(w2, 0f, w2); GL11.glVertex3f(-w2, 0f, w2);
+        GL11.glEnd();
+        GL11.glPopMatrix();
+    }
+}`;
+    VFS["com/hades/client/module/impl/render/ESP.java"] = `package com.hades.client.module.impl.render;
+public class ESP {
+    public void onRender3D(Event event) {
+        int color = (0xFF << 24) | (0 << 16) | (200 << 8) | 255;
+        
+        // This natively calls your OTHER file via the VFS compiler!
+        com.hades.client.util.RenderUtil.drawBatchedOutlinedEntityESP(0.0, 0.0, 0.0, 0.6f, 1.8f, color);
+    }
+}`;
+    renderFileTree();
+    loadFileIntoEditor("com/hades/client/util/RenderUtil.java");
+    compileVFS();
+}
+
+function updateHighlight() {
+    let t = document.getElementById('editor').value;
+    let h = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    h = h.replace(/(\/\/.*)|("[^"]*")|\b(float|double|int|boolean|if|else|for|return|continue|new|class|List|IPlayer|package|public|static|void)\b|\b(GL11|Math|String|HadesAPI)\b|\b([a-zA-Z0-9_]+)(?=\()|(\b\d+(?:\.\d*)?[fd]?\b|\.\d+[fd]?\b)/g, function(m, cm, st, ky, cl, md, nm) {
+        if (cm) return '<span class="cm">' + cm + '</span>';
+        if (st) return '<span class="st">' + st + '</span>';
+        if (ky) return '<span class="ky">' + ky + '</span>';
+        if (cl) return '<span class="cl">' + cl + '</span>';
+        if (md) return '<span class="md">' + md + '</span>';
+        if (nm) return '<span class="nm">' + nm + '</span>';
+        return m;
+    });
+    document.getElementById('highlight-code').innerHTML = h + '\n';
+}
+
+function syncScroll() {
+    let e = document.getElementById('editor'), l = document.getElementById('highlight-layer');
+    l.scrollTop = e.scrollTop;
+    l.scrollLeft = e.scrollLeft;
+}
+
+function handleTab(e) {
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        let t = e.target, s = t.selectionStart, n = t.selectionEnd;
+        t.value = t.value.substring(0, s) + "    " + t.value.substring(n);
+        t.selectionStart = t.selectionEnd = s + 4;
+        updateHighlight();
+    }
+}
+
+injectDemoVFS();
+requestAnimationFrame(renderLoop);
+
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ public class DebugHUD extends Module {
     private final BooleanSetting showSpeed = new BooleanSetting("Show Speed Graph", true);
     private final BooleanSetting showExtraDebug = new BooleanSetting("Show Extra Debug Info", false);
     private final BooleanSetting showPacketInspector = new BooleanSetting("Show Packet Inspector", false);
+    private final BooleanSetting showServerGhost = new BooleanSetting("Show Server Ghost", false);
 
     /** Represents one captured packet entry for display. */
     private static class PacketLogEntry {
@@ -59,6 +60,11 @@ public class DebugHUD extends Module {
     private float serverYaw = 0f;
     private float serverPitch = 0f;
 
+    // Server Ghost tracking
+    private double ghostRealX = 0, ghostRealY = 0, ghostRealZ = 0;
+    private boolean hasGhostPos = false;
+    private int lastTargetId = -1;
+
     public DebugHUD() {
         super("DebugHUD", "Displays debug information and packet graphs on screen.", Category.RENDER, 0);
         register(showPackets);
@@ -69,6 +75,7 @@ public class DebugHUD extends Module {
         register(showSpeed);
         register(showExtraDebug);
         register(showPacketInspector);
+        register(showServerGhost);
 
         for (int i = 0; i < MAX_HISTORY; i++) {
             inHistory.add(0);
@@ -100,6 +107,18 @@ public class DebugHUD extends Module {
                 packetLog.addFirst(entry);
                 if (packetLog.size() > MAX_PACKET_LOG)
                     packetLog.removeLast();
+            }
+        }
+        
+        if (showServerGhost.getValue()) {
+            Object packet = event.getPacket();
+            if (packet != null) {
+                String name = PacketMapper.getPacketName(packet);
+                if (name.startsWith("S14PacketEntity")) {
+                    trackGhostPosFromS14(packet);
+                } else if (name.equals("S18PacketEntityTeleport")) {
+                    trackGhostPosFromS18(packet);
+                }
             }
         }
     }
@@ -147,6 +166,37 @@ public class DebugHUD extends Module {
                     serverPitch = wrapper.getPitch();
                 }
             }
+        }
+    }
+
+    @EventHandler
+    public void onRender3D(com.hades.client.event.events.Render3DEvent event) {
+        if (!isEnabled() || !showServerGhost.getValue() || !hasGhostPos) return;
+        
+        com.hades.client.api.interfaces.IEntity target = com.hades.client.combat.TargetManager.getInstance().getTarget();
+        if (target == null || target.getEntityId() != lastTargetId) {
+            hasGhostPos = false;
+            return;
+        }
+        
+        try {
+            double renderPosX = HadesAPI.renderer.getRenderPosX();
+            double renderPosY = HadesAPI.renderer.getRenderPosY();
+            double renderPosZ = HadesAPI.renderer.getRenderPosZ();
+
+            double renderX = (ghostRealX / 32.0) - renderPosX;
+            double renderY = (ghostRealY / 32.0) - renderPosY;
+            double renderZ = (ghostRealZ / 32.0) - renderPosZ;
+
+            float width = target.getWidth();
+            float height = target.getHeight();
+            if (width <= 0) width = 0.6f;
+            if (height <= 0) height = 1.8f;
+
+            int color = new java.awt.Color(255, 50, 50, 100).getRGB(); // Solid Red with alpha
+            com.hades.client.util.RenderUtil.drawOutlinedEntityESP(renderX, renderY, renderZ, width, height, color);
+        } catch (Exception e) {
+            com.hades.client.util.HadesLogger.get().error("[DebugHUD] Ghost Render Error", e);
         }
     }
 
@@ -467,6 +517,51 @@ public class DebugHUD extends Module {
             HadesAPI.Render.drawString(text, pixelX - HadesAPI.Render.getStringWidth(text, 0.8f) / 2f, cy + 4, color,
                     0.8f);
             HadesAPI.Render.drawRect(pixelX - 0.5f, cy + 14, 1f, 6f, new Color(150, 150, 150, 200).getRGB());
+        }
+    }
+
+    private void trackGhostPosFromS14(Object packet) {
+        com.hades.client.api.interfaces.IEntity target = com.hades.client.combat.TargetManager.getInstance().getTarget();
+        if (target == null) {
+            hasGhostPos = false;
+            return;
+        }
+        
+        int entityId = HadesAPI.network.getPacketEntityId(packet);
+        if (entityId == -1 || entityId != target.getEntityId()) return;
+
+        if (target.getEntityId() != lastTargetId || !hasGhostPos) {
+            ghostRealX = target.getX() * 32.0;
+            ghostRealY = target.getY() * 32.0;
+            ghostRealZ = target.getZ() * 32.0;
+            hasGhostPos = true;
+            lastTargetId = target.getEntityId();
+        }
+
+        double[] delta = HadesAPI.network.getS14EntityMoveDelta(packet);
+        if (delta != null) {
+            ghostRealX += delta[0];
+            ghostRealY += delta[1];
+            ghostRealZ += delta[2];
+        }
+    }
+
+    private void trackGhostPosFromS18(Object packet) {
+        com.hades.client.api.interfaces.IEntity target = com.hades.client.combat.TargetManager.getInstance().getTarget();
+        if (target == null) {
+            hasGhostPos = false;
+            return;
+        }
+        int entityId = HadesAPI.network.getPacketEntityId(packet);
+        if (entityId == -1 || entityId != target.getEntityId()) return;
+
+        double[] pos = HadesAPI.network.getS18EntityPos(packet);
+        if (pos != null) {
+            ghostRealX = pos[0];
+            ghostRealY = pos[1];
+            ghostRealZ = pos[2];
+            hasGhostPos = true;
+            lastTargetId = target.getEntityId();
         }
     }
 }

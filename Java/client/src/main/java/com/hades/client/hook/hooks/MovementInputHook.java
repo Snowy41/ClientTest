@@ -26,7 +26,36 @@ public class MovementInputHook {
             float strafe = strafeField.getFloat(movementInput);
 
             // Bypass early if no inputs are pressed
-            if (forward == 0 && strafe == 0) return;
+            if (forward == 0 && strafe == 0) {
+                 com.hades.client.hook.hooks.MoveEntityWithHeadingHook.auraSideways = false;
+                 return;
+            }
+
+            // TargetStrafe integration
+            com.hades.client.module.impl.movement.TargetStrafe ts = com.hades.client.module.impl.movement.TargetStrafe.getInstance();
+            if (ts != null && ts.isEnabled() && forward > 0) {
+                com.hades.client.api.interfaces.IEntity target = com.hades.client.combat.TargetManager.getInstance().getTarget();
+                if (target != null && com.hades.client.api.HadesAPI.player != null) {
+                    double dist = com.hades.client.combat.CombatUtil.getDistanceToBox(com.hades.client.api.HadesAPI.player, target);
+                    double radius = ts.radius.getValue();
+                    if (ts.keepDistance.getValue()) {
+                        if (dist > radius + 0.3) {
+                            forward = 1;
+                        } else if (dist < radius - 0.3) {
+                            forward = -1;
+                        } else {
+                            forward = 0;
+                        }
+                    } else {
+                        forward = 0;
+                    }
+                    strafe = ts.direction;
+                    
+                    // Commit to fields in case Silent Rotation is not active
+                    forwardField.setFloat(movementInput, forward);
+                    strafeField.setFloat(movementInput, strafe);
+                }
+            }
 
             // Apply Silent Rotation translation if KillAura OR Scaffold is active
             Float activeYaw = com.hades.client.module.impl.combat.KillAura.getActiveAuraYaw();
@@ -65,6 +94,8 @@ public class MovementInputHook {
 
                     forwardField.setFloat(movementInput, finalForward);
                     strafeField.setFloat(movementInput, finalStrafe);
+                } else {
+                    com.hades.client.hook.hooks.MoveEntityWithHeadingHook.auraSideways = false;
                 }
         } catch (Exception ignored) {}
     }

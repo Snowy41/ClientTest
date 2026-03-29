@@ -10,7 +10,7 @@ import com.hades.client.api.interfaces.IItemStack;
  */
 public class NeuroFeatures {
 
-    public static final int FEATURE_COUNT = 10;
+    public static final int FEATURE_COUNT = 11;
 
     /**
      * Converts a Minecraft item stack into a normalized float array for ML
@@ -53,27 +53,67 @@ public class NeuroFeatures {
         // [4] Stack Size normalized over max stack size (64)
         features[4] = Math.min((float) stack.getStackSize() / 64.0f, 1.0f);
 
-        // [5] Is Food
+        // [5] Is Food (MC 1.8.9 unlocalized names: beefCooked, porkchopCooked, chickenCooked, etc.)
         features[5] = (name.contains("apple") || name.contains("beef") || name.contains("porkchop")
                 || name.contains("carrot") || name.contains("potato") || name.contains("bread") || name.contains("fish")
                 || name.contains("chicken") || name.contains("mutton") || name.contains("rabbit")
-                || name.contains("melon") || name.contains("cookie") || name.contains("pie") || name.contains("stew"))
+                || name.contains("melon") || name.contains("cookie") || name.contains("pie") || name.contains("stew")
+                || name.contains("pumpkinpie") || name.contains("mushroomstew"))
                         ? 1.0f
                         : 0.0f;
 
-        // [6] Is Bow or Projectile
+        // [6] Is Bow or Projectile or Good Splash Potion
         features[6] = (name.contains("bow") || name.contains("arrow") || name.contains("snowball")
-                || name.contains("egg") || name.contains("potion")) ? 1.0f : 0.0f;
+                || name.contains("experience") || name.contains("exp_bottle")
+                || item.isEgg()) ? 1.0f : 0.0f;
 
         // [7] Useless Junk Flag
-        features[7] = isJunk(name) ? 1.0f : 0.0f;
+        boolean isExplicitJunk = isJunk(name);
+        
+        // Potion Intelligence Parsing
+        float extremeValue = 0.0f;
+        if (name.contains("potion")) {
+            int meta = stack.getDamage();
+            boolean isSplash = (meta & 16384) != 0;
+            int type = meta & 15; // Extract base potion ID
+            
+            // 4=Poison, 8=Weakness, 10=Slowness, 12=Harming
+            boolean isBadEffect = (type == 4 || type == 8 || type == 10 || type == 12);
+            // 1=Regen, 2=Speed, 5=Healing, 9=Strength
+            boolean isSuperBuff = (type == 1 || type == 2 || type == 5 || type == 9);
+            
+            if (isBadEffect) {
+                if (isSplash) features[6] = 1.0f; // Splash Harming/Poison = Projectile Weapon
+                else isExplicitJunk = true;       // Drinkable Poison = Garbage
+            } else if (isSuperBuff) {
+                extremeValue = 1.0f; // High priority loot
+            } else if (type == 0) {
+                isExplicitJunk = true; // Water bottle / awkward potion
+            } else {
+                extremeValue = 0.5f; // Other moderate potions
+            }
+        }
+        
+        features[7] = isExplicitJunk ? 1.0f : 0.0f;
 
-        // [8] Is Utility Tool
+        // [8] Is Utility Tool (MC 1.8.9: shovelIron, pickaxeIron, hatchetIron, hoeIron)
         features[8] = (name.contains("pickaxe") || name.contains("hatchet") || name.contains("shovel")
-                || name.contains("hoe")) ? 1.0f : 0.0f;
+                || name.contains("hoe") || name.contains("shears")) ? 1.0f : 0.0f;
 
         // [9] Contextual Observance: Is Obsolete (Weaker than another item owned)
         features[9] = isObsolete ? 1.0f : 0.0f;
+        
+        // [10] Extreme Value (Enchantments + Super Buffs)
+        if (stack.getEnchantmentLevel(0) > 0 || stack.getEnchantmentLevel(16) > 0 || stack.getEnchantmentLevel(32) > 0) {
+            extremeValue = 1.0f; // Any primary enchantment assigns max extreme value
+        }
+        if (name.contains("apple") && name.contains("gold")) {
+            extremeValue = 1.0f; // Golden Apples
+        }
+        if (name.contains("enchanted_book") || name.contains("enchantedbook")) {
+            extremeValue = 1.0f; // Enchanted Books carry transferable enchantments
+        }
+        features[10] = extremeValue;
 
         return features;
     }
@@ -85,7 +125,8 @@ public class NeuroFeatures {
                 || name.contains("seeds")
                 || name.contains("bone")
                 || name.contains("spider")
-                || name.contains("flesh");
+                || name.contains("flesh")
+                || name.contains("sulphur");
     }
 
     /**
@@ -98,17 +139,20 @@ public class NeuroFeatures {
         String name = stack.getItem().getUnlocalizedName().toLowerCase();
         float score = 0;
 
+        // Base Vanilla Attack Damages (Sword)
         if (name.contains("diamond"))
-            score = 4.0f;
+            score = 7.0f;
         else if (name.contains("iron"))
-            score = 3.0f;
+            score = 6.0f;
         else if (name.contains("stone"))
-            score = 2.0f;
+            score = 5.0f;
         else if (name.contains("wood") || name.contains("gold"))
-            score = 1.0f;
+            score = 4.0f;
 
-        // 16 = Sharpness
-        score += stack.getEnchantmentLevel(16) * 0.75f;
+        // 16 = Sharpness (+1.25 per level in 1.8.9)
+        score += stack.getEnchantmentLevel(16) * 1.25f;
+        // 20 = Fire Aspect (+1 per level equivalent utility)
+        score += stack.getEnchantmentLevel(20) * 1.0f;
 
         if (stack.getMaxDamage() > 0) {
             score -= (stack.getDamage() / (float) stack.getMaxDamage()) * 0.1f;
@@ -127,20 +171,31 @@ public class NeuroFeatures {
         String name = stack.getItem().getUnlocalizedName().toLowerCase();
         float score = 0;
 
+        // Base Vanilla Tier Sorting (MC names: helmetDiamond, helmetIron, helmetChain, helmetGold, helmetCloth)
         if (name.contains("diamond"))
-            score = 4.0f;
+            score = 50.0f;
         else if (name.contains("iron"))
-            score = 3.0f;
+            score = 40.0f;
+        else if (name.contains("chain"))
+            score = 30.0f;
         else if (name.contains("gold"))
-            score = 2.0f;
-        else if (name.contains("leather") || name.contains("chainmail"))
-            score = 1.0f;
+            score = 20.0f;
+        else if (name.contains("cloth") || name.contains("leather"))
+            score = 10.0f;
 
-        // 0 = Protection
-        score += stack.getEnchantmentLevel(0) * 0.5f;
+        // 0 = Protection (+4 equivalents per tier allows highly enchanted lower tiers to win)
+        score += stack.getEnchantmentLevel(0) * 4.0f;
+        // 1 = Fire Protection, 3 = Blast Protection, 4 = Projectile Protection (lesser value)
+        score += stack.getEnchantmentLevel(1) * 1.5f;
+        score += stack.getEnchantmentLevel(3) * 1.5f;
+        score += stack.getEnchantmentLevel(4) * 1.5f;
+        // 7 = Thorns
+        score += stack.getEnchantmentLevel(7) * 1.0f;
+        // 34 = Unbreaking
+        score += stack.getEnchantmentLevel(34) * 0.5f;
 
         if (stack.getMaxDamage() > 0) {
-            score -= (stack.getDamage() / (float) stack.getMaxDamage()) * 0.1f;
+            score -= (stack.getDamage() / (float) stack.getMaxDamage());
         }
 
         return score;
@@ -156,6 +211,7 @@ public class NeuroFeatures {
         String name = stack.getItem().getUnlocalizedName().toLowerCase();
         float score = 0;
 
+        // MC 1.8.9: pickaxeDiamond, hatchetDiamond, shovelDiamond, hoeDiamond
         if (name.contains("diamond"))
             score = 4.0f;
         else if (name.contains("iron"))
@@ -167,6 +223,12 @@ public class NeuroFeatures {
 
         // 32 = Efficiency
         score += stack.getEnchantmentLevel(32) * 0.5f;
+        // 33 = Silk Touch
+        score += stack.getEnchantmentLevel(33) * 1.0f;
+        // 35 = Fortune
+        score += stack.getEnchantmentLevel(35) * 0.8f;
+        // 34 = Unbreaking
+        score += stack.getEnchantmentLevel(34) * 0.3f;
 
         if (stack.getMaxDamage() > 0) {
             score -= (stack.getDamage() / (float) stack.getMaxDamage()) * 0.1f;
@@ -190,7 +252,8 @@ public class NeuroFeatures {
         2.0f,  // [6] Bow/Projectile
        -5.0f,  // [7] Junk
         1.5f,  // [8] Utility Tool
-       -4.0f   // [9] Obsolete
+       -4.0f,  // [9] Obsolete
+        3.0f   // [10] Extreme Value (Gapples, Potions, Enchantments)
     };
     private static final float DESIRABILITY_BIAS = -0.5f;
 

@@ -48,6 +48,8 @@ public interface IEntity {
     float getHealth();
     float getMaxHealth();
     
+    float getFallDistance();
+    
     // Setters for Combat / Movement manipulation
     void setYaw(float yaw);
     void setPitch(float pitch);

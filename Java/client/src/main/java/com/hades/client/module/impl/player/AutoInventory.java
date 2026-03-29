@@ -9,12 +9,15 @@ import com.hades.client.module.Module;
 import com.hades.client.module.setting.NumberSetting;
 import com.hades.client.module.setting.BooleanSetting;
 import com.hades.client.ai.NeuroFeatures;
+import com.hades.client.manager.InventoryTaskManager;
+import com.hades.client.HadesClient;
 
 public class AutoInventory extends Module {
 
     private final NumberSetting delay = new NumberSetting("Delay (ms)", 150, 0, 1000, 10);
     private final NumberSetting jitter = new NumberSetting("Jitter (ms)", 50, 0, 500, 10);
     private final BooleanSetting openInvOnly = new BooleanSetting("Open Inv Only", false);
+    private final BooleanSetting pauseOnMove = new BooleanSetting("Pause on Move", true);
     private final BooleanSetting dropUseless = new BooleanSetting("Drop Junk", true);
     private final BooleanSetting sortHotbar = new BooleanSetting("Sort Hotbar", true);
     
@@ -27,6 +30,12 @@ public class AutoInventory extends Module {
     private final NumberSetting maxArrowStacks = new NumberSetting("Max Arrow Stacks", 2, 0, 10, 1);
     private final NumberSetting maxGapStacks = new NumberSetting("Max Gap Stacks", 2, 0, 10, 1);
 
+    private java.lang.reflect.Field currentScreenField;
+    
+    // Resolved GUI classes for reliable instanceof checks (works in obfuscated env)
+    private Class<?> guiInventoryClass;
+    private Class<?> guiContainerCreativeClass;
+
     private long lastActionTime = 0;
 
     public AutoInventory() {
@@ -34,6 +43,7 @@ public class AutoInventory extends Module {
         register(delay);
         register(jitter);
         register(openInvOnly);
+        register(pauseOnMove);
         register(dropUseless);
         register(sortHotbar);
         register(layout);
@@ -41,6 +51,17 @@ public class AutoInventory extends Module {
         register(maxFoodStacks);
         register(maxArrowStacks);
         register(maxGapStacks);
+
+        try {
+            Class<?> mcClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.client.Minecraft", "ave");
+            if (mcClass != null) {
+                currentScreenField = com.hades.client.util.ReflectionUtil.findField(mcClass, "m", "currentScreen", "field_71462_r");
+            }
+            guiInventoryClass = com.hades.client.util.ReflectionUtil.findClass(
+                    "net.minecraft.client.gui.inventory.GuiInventory", "azc");
+            guiContainerCreativeClass = com.hades.client.util.ReflectionUtil.findClass(
+                    "net.minecraft.client.gui.inventory.GuiContainerCreative", "ayu");
+        } catch (Exception e) {}
     }
 
     @Override
@@ -48,68 +69,53 @@ public class AutoInventory extends Module {
         super.onDisable();
     }
 
+    /**
+     * Checks if the current GUI screen is the player's inventory (survival or creative).
+     * Uses resolved class references instead of name matching — works in obfuscated environments.
+     */
+    private boolean isPlayerInventoryScreen() {
+        if (currentScreenField == null) return false;
+        try {
+            Object rawMc = HadesAPI.mc.getRaw();
+            if (rawMc == null) return false;
+            Object screen = currentScreenField.get(rawMc);
+            if (screen == null) return false;
+            
+            if (guiInventoryClass != null && guiInventoryClass.isInstance(screen)) return true;
+            if (guiContainerCreativeClass != null && guiContainerCreativeClass.isInstance(screen)) return true;
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @EventHandler
     public void onTick(TickEvent event) {
         if (!isEnabled() || HadesAPI.mc == null || HadesAPI.player == null) return;
         
         if (HadesAPI.Game.isGuiOpen()) {
-            Object rawMc = HadesAPI.mc.getRaw();
-            if (rawMc != null) {
-                try {
-                    java.lang.reflect.Field currentScreenField = com.hades.client.util.ReflectionUtil.findField(rawMc.getClass(), "m", "currentScreen", "field_71462_r");
-                    if (currentScreenField != null) {
-                        Object currentScreen = currentScreenField.get(rawMc);
-                        if (currentScreen != null && !currentScreen.getClass().getSimpleName().equals("GuiInventory")) {
-                            return;
-                        }
-                    }
-                } catch (Exception e) {}
-            }
+            // A GUI is open — only proceed if it's the player's inventory screen
+            if (!isPlayerInventoryScreen()) return;
         } else if (openInvOnly.getValue()) {
             return; // Halt logic natively if Open Inv Only is toggled and we are freely running around
         }
+        
+        if (pauseOnMove.getValue() && (HadesAPI.player.getMoveForward() != 0 || HadesAPI.player.getMoveStrafing() != 0)) {
+            return; // Prevent triggering 'Inventory Move' Intave/Grim flags while actively navigating.
+        }
 
         if (System.currentTimeMillis() < lastActionTime) {
             return;
         }
+
+        // Skip if another module is mid-operation (e.g. AutoArmor 3-step swap)
+        InventoryTaskManager taskMgr = InventoryTaskManager.getInstance();
+        if (taskMgr.isBusy()) return;
+        if (!taskMgr.canActThisTick()) return;
 
         InventoryManager inv = InventoryManager.getInstance();
 
-        // Inventory management timing gate
-        if (System.currentTimeMillis() < lastActionTime) {
-            return;
-        }
-
-        // 1. Stack Combination Layer
-        for (int i = 9; i < 45; i++) {
-            int apiSlot1 = i >= 36 ? i - 36 : i;
-            IItemStack stack1 = inv.getSlot(apiSlot1);
-            if (stack1 == null || stack1.isNull() || stack1.getItem().isNull()) continue;
-            
-            int maxStack = stack1.getMaxStackSize();
-            if (maxStack <= 1 || stack1.getStackSize() >= maxStack) continue;
-            
-            for (int j = i + 1; j < 45; j++) {
-                int apiSlot2 = j >= 36 ? j - 36 : j;
-                IItemStack stack2 = inv.getSlot(apiSlot2);
-                if (stack2 == null || stack2.isNull() || stack2.getItem().isNull()) continue;
-                
-                if (stack2.getStackSize() >= maxStack) continue;
-                
-                if (stack1.getItem().getId() == stack2.getItem().getId() && stack1.getDamage() == stack2.getDamage()) {
-                    com.hades.client.util.HadesLogger.get().info("[AutoInventory] Combining stacks of " + stack1.getItem().getUnlocalizedName() + " from GUI slot " + j + " to " + i);
-                    // 1. Pick up stack2
-                    inv.windowClick(0, j, 0, 0);
-                    // 2. Place onto stack1
-                    inv.windowClick(0, i, 0, 0);
-                    // 3. Put remainder (if any) back into slot2
-                    inv.windowClick(0, j, 0, 0);
-                    
-                    lastActionTime = System.currentTimeMillis() + delay.getValue().longValue() + (long)(Math.random() * jitter.getValue().doubleValue());
-                    return;
-                }
-            }
-        }
+        // Stack Combination Layer deleted to enforce strict compliance with Keybind/No-Cursor interactions
 
         if (dropUseless.getValue()) {
             int bestSlotToDrop = -1;
@@ -136,7 +142,8 @@ public class AutoInventory extends Module {
                 // Mode 4, Button 1: Drop entire stack via hotkey (CTRL+Q equivalent)
                 inv.windowClick(0, bestSlotToDrop, 1, 4);
                 
-                lastActionTime = System.currentTimeMillis() + delay.getValue().longValue() + (long)(Math.random() * jitter.getValue().doubleValue());
+                lastActionTime = System.currentTimeMillis() + taskMgr.getGaussianDelay(delay.getValue().longValue(), jitter.getValue().longValue());
+                taskMgr.recordAction();
                 return;
             }
         }
@@ -187,7 +194,8 @@ public class AutoInventory extends Module {
             
             // Mode 2, Button = target hotbar index (0-8)
             inv.windowClick(0, guiClickSlot, hotbarIndex, 2);
-            lastActionTime = System.currentTimeMillis() + delay.getValue().longValue() + (long)(Math.random() * jitter.getValue().doubleValue());
+            lastActionTime = System.currentTimeMillis() + InventoryTaskManager.getInstance().getGaussianDelay(delay.getValue().longValue(), jitter.getValue().longValue());
+            InventoryTaskManager.getInstance().recordAction();
             
             return true;
         }
@@ -211,6 +219,9 @@ public class AutoInventory extends Module {
                 break;
             case "axe":
                 if (name.contains("hatchet")) return NeuroFeatures.getToolScore(stack);
+                break;
+            case "shovel":
+                if (name.contains("shovel")) return NeuroFeatures.getToolScore(stack);
                 break;
             case "block":
                 float[] blockFeat = NeuroFeatures.extractFeatures(stack, false);
@@ -250,11 +261,12 @@ public class AutoInventory extends Module {
 
     private boolean isJunk(String name) {
         return name.contains("rotten") 
-            || name.contains("spider_eye") 
+            || name.contains("spider") 
             || name.contains("flesh") 
             || name.contains("seeds")
-            || name.contains("egg")
-            || name.contains("poisonous");
+            || name.contains("item.egg")
+            || name.contains("poisonous")
+            || name.contains("sulphur");
     }
 
     private boolean isObsolete(int targetSlot, IItemStack itemStack, InventoryManager inv) {
@@ -264,35 +276,63 @@ public class AutoInventory extends Module {
         // Protect extremely valuable items
         if (name.contains("apple") && name.contains("gold")) return false; // Never drop Gapples
         
-        if (name.contains("sword") || name.contains("hatchet") || name.contains("pickaxe") || name.contains("spade") || name.contains("bow")) {
+        if (name.contains("sword") || name.contains("hatchet") || name.contains("pickaxe") || name.contains("shovel") || name.contains("bow") || 
+            name.contains("helmet") || name.contains("chestplate") || name.contains("leggings") || name.contains("pants") || name.contains("boots")) {
+            
+            boolean isArmor = name.contains("helmet") || name.contains("chestplate") || name.contains("leggings") || name.contains("pants") || name.contains("boots");
+            
+            // If this is armor and AutoArmor is enabled, check if this piece is the best
+            // available for its slot — if so, don't drop it, let AutoArmor equip it
+            if (isArmor) {
+                Module autoArmor = HadesClient.getInstance().getModuleManager().getModule("AutoArmor");
+                if (autoArmor != null && autoArmor.isEnabled()) {
+                    int armorSlotIndex = getArmorSlotIndex(name);
+                    if (armorSlotIndex != -1 && isBestAvailableArmor(itemStack, name, armorSlotIndex, targetSlot, inv)) {
+                        return false; // AutoArmor will handle equipping this
+                    }
+                }
+            }
             
             float currentScore = 0;
             if (name.contains("sword")) currentScore = NeuroFeatures.getWeaponScore(itemStack);
-            else if (name.contains("hatchet") || name.contains("pickaxe") || name.contains("spade")) currentScore = NeuroFeatures.getToolScore(itemStack);
-            else if (name.contains("bow")) currentScore = itemStack.getEnchantmentLevel(48) * 1.5f;
+            else if (name.contains("hatchet") || name.contains("pickaxe") || name.contains("shovel")) currentScore = NeuroFeatures.getToolScore(itemStack);
+            else if (name.contains("bow")) currentScore = 10f + itemStack.getEnchantmentLevel(48) * 1.5f + itemStack.getEnchantmentLevel(49) * 1.0f + itemStack.getEnchantmentLevel(50) * 1.0f + itemStack.getEnchantmentLevel(51) * 2.0f;
+            else if (isArmor) currentScore = NeuroFeatures.getArmorScore(itemStack);
 
-            for (int i = 9; i < 45; i++) {
-                int apiSlot = i >= 36 ? i - 36 : i;
-                if (apiSlot == targetSlot) continue; // Prevent self-evaluation loop
+            // Check inventory slots 0-35 for a better duplicate
+            for (int i = 0; i < 36; i++) {
+                if (i == targetSlot) continue;
                 
-                IItemStack other = inv.getSlot(apiSlot);
-                if (!other.isNull() && !other.getItem().isNull()) {
+                IItemStack other = inv.getSlot(i);
+                if (other != null && !other.isNull() && !other.getItem().isNull()) {
                     String otherName = other.getItem().getUnlocalizedName().toLowerCase();
-                    if ((name.contains("sword") && otherName.contains("sword")) ||
-                        (name.contains("hatchet") && otherName.contains("hatchet")) ||
-                        (name.contains("pickaxe") && otherName.contains("pickaxe")) ||
-                        (name.contains("spade") && otherName.contains("spade")) ||
-                        (name.contains("bow") && otherName.contains("bow"))) {
-                        
+                    if (isSameGearType(name, otherName)) {
                         float otherScore = 0;
                         if (otherName.contains("sword")) otherScore = NeuroFeatures.getWeaponScore(other);
-                        else if (otherName.contains("hatchet") || otherName.contains("pickaxe") || otherName.contains("spade")) otherScore = NeuroFeatures.getToolScore(other);
-                        else if (otherName.contains("bow")) otherScore = other.getEnchantmentLevel(48) * 1.5f;
+                        else if (otherName.contains("hatchet") || otherName.contains("pickaxe") || otherName.contains("shovel")) otherScore = NeuroFeatures.getToolScore(other);
+                        else if (otherName.contains("bow")) otherScore = 10f + other.getEnchantmentLevel(48) * 1.5f + other.getEnchantmentLevel(49) * 1.0f + other.getEnchantmentLevel(50) * 1.0f + other.getEnchantmentLevel(51) * 2.0f;
+                        else if (isArmor) otherScore = NeuroFeatures.getArmorScore(other);
 
-                        // Only mark as obsolete if there's a STRICTLY better one,
-                        // OR if equal score, only drop the one in the HIGHER slot index (tiebreaker)
+                        // Drop if a strictly better one exists
                         if (otherScore > currentScore) return true;
-                        if (otherScore == currentScore && apiSlot > targetSlot) return true;
+                        // Tiebreaker: keep the one in the LOWER slot index (consistent ordering prevents ping-pong)
+                        if (otherScore == currentScore && i < targetSlot) return true;
+                    }
+                }
+            }
+            
+            // Also check equipped armor slots for armor pieces
+            if (isArmor) {
+                int armorSlotIndex = getArmorSlotIndex(name);
+                if (armorSlotIndex != -1) {
+                    IItemStack equipped = inv.getArmorSlot(armorSlotIndex);
+                    if (equipped != null && !equipped.isNull() && !equipped.getItem().isNull()) {
+                        String equippedName = equipped.getItem().getUnlocalizedName().toLowerCase();
+                        if (isSameGearType(name, equippedName)) {
+                            float equippedScore = NeuroFeatures.getArmorScore(equipped);
+                            // If what we're wearing is better or equal, this inventory piece is obsolete
+                            if (equippedScore >= currentScore) return true;
+                        }
                     }
                 }
             }
@@ -333,6 +373,68 @@ public class AutoInventory extends Module {
         }
         
         return false;
+    }
+    
+    /**
+     * Checks if two gear names belong to the same equipment type.
+     */
+    private boolean isSameGearType(String name1, String name2) {
+        return (name1.contains("sword") && name2.contains("sword")) ||
+               (name1.contains("hatchet") && name2.contains("hatchet")) ||
+               (name1.contains("pickaxe") && name2.contains("pickaxe")) ||
+               (name1.contains("shovel") && name2.contains("shovel")) ||
+               (name1.contains("bow") && name2.contains("bow")) ||
+               (name1.contains("helmet") && name2.contains("helmet")) ||
+               (name1.contains("chestplate") && name2.contains("chestplate")) ||
+               ((name1.contains("leggings") || name1.contains("pants")) && (name2.contains("leggings") || name2.contains("pants"))) ||
+               (name1.contains("boots") && name2.contains("boots"));
+    }
+    
+    /**
+     * Maps an armor piece name to its armor slot index (0=boots, 1=leggings, 2=chestplate, 3=helmet).
+     */
+    private int getArmorSlotIndex(String name) {
+        if (name.contains("boots")) return 0;
+        if (name.contains("leggings") || name.contains("pants")) return 1;
+        if (name.contains("chestplate")) return 2;
+        if (name.contains("helmet")) return 3;
+        return -1;
+    }
+    
+    /**
+     * Checks if this armor piece is the best available for its slot across the entire inventory.
+     * If it is, AutoArmor should be allowed to equip it rather than having it dropped.
+     */
+    private boolean isBestAvailableArmor(IItemStack piece, String pieceName, int armorSlotIndex, int pieceSlot, InventoryManager inv) {
+        float pieceScore = NeuroFeatures.getArmorScore(piece);
+        
+        // Compare against equipped armor
+        IItemStack equipped = inv.getArmorSlot(armorSlotIndex);
+        if (equipped != null && !equipped.isNull() && !equipped.getItem().isNull()) {
+            float equippedScore = NeuroFeatures.getArmorScore(equipped);
+            if (equippedScore >= pieceScore) return false; // Equipped is already better
+        }
+        
+        // Compare against all other pieces of the same type in inventory
+        String armorType = "";
+        if (pieceName.contains("helmet")) armorType = "helmet";
+        else if (pieceName.contains("chestplate")) armorType = "chestplate";
+        else if (pieceName.contains("leggings") || pieceName.contains("pants")) armorType = "leggings";
+        else if (pieceName.contains("boots")) armorType = "boots";
+        
+        for (int i = 0; i < 36; i++) {
+            if (i == pieceSlot) continue;
+            IItemStack other = inv.getSlot(i);
+            if (other != null && !other.isNull() && !other.getItem().isNull()) {
+                String otherName = other.getItem().getUnlocalizedName().toLowerCase();
+                if (otherName.contains(armorType) || (armorType.equals("leggings") && otherName.contains("pants"))) {
+                    float otherScore = NeuroFeatures.getArmorScore(other);
+                    if (otherScore > pieceScore) return false; // A better piece exists elsewhere
+                }
+            }
+        }
+        
+        return true; // This is the best available — don't drop it
     }
     
     private String getStackCategory(String name, IItemStack stack) {

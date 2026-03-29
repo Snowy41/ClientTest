@@ -16,7 +16,7 @@ import java.awt.Color;
  */
 public class Trajectories extends Module {
 
-    private final NumberSetting lineWidth = new NumberSetting("Line Width", 2.0, 1.0, 6.0, 0.5);
+    private final NumberSetting lineWidth = new NumberSetting("Line Width", 1.0, 0.5, 6.0, 0.5);
 
     public Trajectories() {
         super("Trajectories", "Draws the predicted path of thrown projectiles", Category.RENDER, 0);
@@ -39,7 +39,7 @@ public class Trajectories extends Module {
             boolean isBow = name.contains("bow");
             boolean isPearl = name.contains("enderpearl") || name.contains("ender_pearl");
             boolean isSnowball = name.contains("snowball");
-            boolean isEgg = name.contains("egg");
+            boolean isEgg = name.contains("item.egg");
             boolean isPotion = name.contains("potion");
 
             if (!isBow && !isPearl && !isSnowball && !isEgg && !isPotion) return;
@@ -98,7 +98,7 @@ public class Trajectories extends Module {
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDepthMask(false);
 
-            Color c = new Color(21, 121, 230);
+            Color c = new Color(255, 255, 255);
             GL11.glColor4f(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, 0.7f);
             GL11.glLineWidth(lineWidth.getValue().floatValue());
 
@@ -132,18 +132,25 @@ public class Trajectories extends Module {
                     projectileHasLanded = true;
                 }
 
-                // Advance
-                projectilePosX += projectileMotionX;
-                projectilePosY += projectileMotionY;
-                projectilePosZ += projectileMotionZ;
+                if (projectileHasLanded && landingPosition != null) {
+                    // Update vertex perfectly to exact surface impact
+                    projectilePosX = landingPosition.hitX;
+                    projectilePosY = landingPosition.hitY;
+                    projectilePosZ = landingPosition.hitZ;
+                } else {
+                    // Advance normally
+                    projectilePosX += projectileMotionX;
+                    projectilePosY += projectileMotionY;
+                    projectilePosZ += projectileMotionZ;
 
-                // Drag
-                projectileMotionX *= 0.99;
-                projectileMotionY *= 0.99;
-                projectileMotionZ *= 0.99;
+                    // Drag
+                    projectileMotionX *= 0.99;
+                    projectileMotionY *= 0.99;
+                    projectileMotionZ *= 0.99;
 
-                // Gravity (reference: bow/potion = 0.05, others = 0.03)
-                projectileMotionY -= (isBow ? 0.05 : isPotion ? 0.05 : 0.03);
+                    // Gravity (reference: bow/potion = 0.05, others = 0.03)
+                    projectileMotionY -= (isBow ? 0.05 : isPotion ? 0.05 : 0.03);
+                }
 
                 // Draw vertex relative to renderPos
                 GL11.glVertex3d(
@@ -169,10 +176,22 @@ public class Trajectories extends Module {
                 double s = 0.5;
 
                 if (landingPosition.isEntityHit) {
-                    // Draw a standing cross (sideways too) for entities
-                    drawHitSquare(cx - s, cy - s, cz, cx - s, cy + s, cz, cx + s, cy + s, cz, cx + s, cy - s, cz); // SOUTH/NORTH
-                    drawHitSquare(cx, cy - s, cz - s, cx, cy + s, cz - s, cx, cy + s, cz + s, cx, cy - s, cz + s); // EAST/WEST
-                    drawHitSquare(cx - s, cy, cz - s, cx - s, cy, cz + s, cx + s, cy, cz + s, cx + s, cy, cz - s); // UP/DOWN
+                    GL11.glColor4f(1.0f, 0.3f, 0.3f, 0.6f); // Red colored box overlay to confirm a deadly strike
+                    
+                    // Render full 3D Hitbox Cube for Entities
+                    double bS = 0.4;
+                    // Bottom
+                    drawHitSquare(cx - bS, cy - bS, cz - bS, cx - bS, cy - bS, cz + bS, cx + bS, cy - bS, cz + bS, cx + bS, cy - bS, cz - bS);
+                    // Top
+                    drawHitSquare(cx - bS, cy + bS, cz - bS, cx - bS, cy + bS, cz + bS, cx + bS, cy + bS, cz + bS, cx + bS, cy + bS, cz - bS);
+                    // Pillars
+                    GL11.glBegin(GL11.GL_LINES);
+                    GL11.glVertex3d(cx - bS, cy - bS, cz - bS); GL11.glVertex3d(cx - bS, cy + bS, cz - bS);
+                    GL11.glVertex3d(cx - bS, cy - bS, cz + bS); GL11.glVertex3d(cx - bS, cy + bS, cz + bS);
+                    GL11.glVertex3d(cx + bS, cy - bS, cz + bS); GL11.glVertex3d(cx + bS, cy + bS, cz + bS);
+                    GL11.glVertex3d(cx + bS, cy - bS, cz - bS); GL11.glVertex3d(cx + bS, cy + bS, cz - bS);
+                    GL11.glEnd();
+                    
                 } else {
                     switch(landingPosition.sideHit) {
                         case "UP":

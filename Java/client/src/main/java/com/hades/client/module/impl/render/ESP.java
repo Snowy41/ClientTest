@@ -10,7 +10,7 @@ import com.hades.client.module.setting.NumberSetting;
 import com.hades.client.util.HadesLogger;
 import com.hades.client.util.OutlineESPManager;
 
-import java.awt.Color;
+
 import java.util.List;
 
 public class ESP extends Module {
@@ -50,8 +50,7 @@ public class ESP extends Module {
             }
 
             if ("Outline".equals(mode.getValue())) {
-                int color = new Color(red.getValue().intValue(), green.getValue().intValue(),
-                        blue.getValue().intValue()).getRGB();
+                int color = (0xFF << 24) | (red.getValue().intValue() << 16) | (green.getValue().intValue() << 8) | blue.getValue().intValue();
 
                 List<com.hades.client.api.interfaces.IEntity> entities = HadesAPI.world.getLoadedEntities();
                 com.hades.client.api.interfaces.IPlayer localPlayer = HadesAPI.player;
@@ -68,8 +67,7 @@ public class ESP extends Module {
                 // Perform the masked drawing operation
                 OutlineESPManager.renderOutlines(event.getPartialTicks());
             } else if ("Box".equals(mode.getValue())) {
-                int color = new Color(red.getValue().intValue(), green.getValue().intValue(),
-                        blue.getValue().intValue(), 255).getRGB();
+                int color = (0xFF << 24) | (red.getValue().intValue() << 16) | (green.getValue().intValue() << 8) | blue.getValue().intValue();
 
                 List<com.hades.client.api.interfaces.IEntity> entities = HadesAPI.world.getLoadedEntities();
                 com.hades.client.api.interfaces.IPlayer localPlayer = HadesAPI.player;
@@ -78,6 +76,7 @@ public class ESP extends Module {
                 double renderPosY = HadesAPI.renderer.getRenderPosY();
                 double renderPosZ = HadesAPI.renderer.getRenderPosZ();
 
+                com.hades.client.util.RenderUtil.beginOutlinedESP();
                 for (com.hades.client.api.interfaces.IEntity entity : entities) {
                     if (entity.getRaw() == localPlayer.getRaw())
                         continue;
@@ -111,10 +110,11 @@ public class ESP extends Module {
                         if (height <= 0)
                             height = 1.8f;
 
-                        com.hades.client.util.RenderUtil.drawOutlinedEntityESP(renderX, renderY, renderZ, width, height,
+                        com.hades.client.util.RenderUtil.drawBatchedOutlinedEntityESP(renderX, renderY, renderZ, width, height,
                                 color);
                     }
                 }
+                com.hades.client.util.RenderUtil.endOutlinedESP();
             }
         } catch (Exception e) {
             HadesLogger.get().error("ESP Module error during Render3DEvent", e);

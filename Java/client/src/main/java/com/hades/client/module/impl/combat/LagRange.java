@@ -48,7 +48,9 @@ public class LagRange extends Module {
             "Disable on Hit", "Disables LagRange when you are hit", true);
 
     private final Queue<DelayedPacket> packets = new LinkedList<>();
+    private final Queue<Object> transactionDrip = new LinkedList<>(); // Gradual C00/C0F release queue
     private boolean shouldBlockPackets = false;
+    private boolean isDripping = false;
     private int damageCooldown = 0;
     private int comboHits = 0;
     private int lastHurtTime = 0;
@@ -86,6 +88,8 @@ public class LagRange extends Module {
         comboHits = 0;
         lastHurtTime = 0;
         packets.clear();
+        transactionDrip.clear();
+        isDripping = false;
         hasServerPos = false;
         
         com.hades.client.api.interfaces.IEntity player = HadesAPI.player;
@@ -101,6 +105,14 @@ public class LagRange extends Module {
     public void onDisable() {
         // CRITICAL: flush ALL queued packets to restore normal ping
         resetPackets();
+        // Flush remaining drip queue immediately on disable
+        while (!transactionDrip.isEmpty()) {
+            Object pkt = transactionDrip.poll();
+            if (pkt != null) {
+                HadesAPI.network.sendPacketDirect(pkt);
+            }
+        }
+        isDripping = false;
     }
 
     // ── Tick: manage blocking state ──
@@ -175,6 +187,21 @@ public class LagRange extends Module {
                 }
             }
         }
+
+        // Gradual Transaction Drip — releases held C00/C0F at a natural rate
+        // Prevents burst detection by Polar (which flags simultaneous transaction responses as ping spoofing)
+        if (isDripping && !transactionDrip.isEmpty()) {
+            int dripCount = Math.min(2, transactionDrip.size());
+            for (int i = 0; i < dripCount; i++) {
+                Object pkt = transactionDrip.poll();
+                if (pkt != null) {
+                    HadesAPI.network.sendPacketDirect(pkt);
+                }
+            }
+            if (transactionDrip.isEmpty()) {
+                isDripping = false;
+            }
+        }
     }
 
     // ── Outgoing packet handling ──
@@ -224,6 +251,12 @@ public class LagRange extends Module {
                         packets.add(new DelayedPacket(packet));
                         event.setCancelled(true);
                     }
+                } else if (name.equals("C0APacketAnimation") || name.equals("C0BPacketEntityAction") ||
+                           name.equals("C08PacketPlayerBlockPlacement") || name.equals("C07PacketPlayerDigging")) {
+                    // Combat action packets pass through immediately — holding them creates
+                    // impossible sequences (swings/blocks with 0ms timing) when flushed,
+                    // which Polar detects as packet manipulation.
+                    // These are safe to send because they don't reveal position.
                 } else if (onlyMove.getValue() && !forceQueueAll) {
                     // Only queue movement packets (Safe when just running around, no combat)
                     if (name.startsWith("C03PacketPlayer") && !contains) {
@@ -295,16 +328,23 @@ public class LagRange extends Module {
         synchronized (packets) {
             if (!packets.isEmpty()) {
                 for (DelayedPacket dp : packets) {
-                    HadesAPI.network.sendPacketDirect(dp.packet);
-
-                    // Track server position from flushed C03 packets 
-                    // (TODO: Read actual packet fields instead of player pos, though player pos is safe on instant flush)
-                    if (PacketMapper.getPacketName(dp.packet).startsWith("C03PacketPlayer")) {
-                        com.hades.client.api.interfaces.IEntity player = HadesAPI.player;
-                        if (player != null) {
-                            serverX = player.getX();
-                            serverY = player.getY();
-                            serverZ = player.getZ();
+                    String pktName = PacketMapper.getPacketName(dp.packet);
+                    
+                    // Transaction/KeepAlive responses → drip queue for gradual release
+                    // This prevents burst detection by Polar which flags simultaneous transaction responses
+                    if (pktName.equals("C00PacketKeepAlive") || pktName.equals("C0FPacketConfirmTransaction")) {
+                        transactionDrip.add(dp.packet);
+                    } else {
+                        // Position + combat packets flush immediately (needed for hit registration)
+                        HadesAPI.network.sendPacketDirect(dp.packet);
+                        
+                        if (pktName.startsWith("C03PacketPlayer")) {
+                            com.hades.client.api.interfaces.IEntity player = HadesAPI.player;
+                            if (player != null) {
+                                serverX = player.getX();
+                                serverY = player.getY();
+                                serverZ = player.getZ();
+                            }
                         }
                     }
                 }
@@ -313,6 +353,10 @@ public class LagRange extends Module {
         }
         getState().setLagging(false);
         hasServerPos = false;
+        
+        if (!transactionDrip.isEmpty()) {
+            isDripping = true;
+        }
     }
 
 }

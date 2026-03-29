@@ -17,6 +17,7 @@ public class Vanilla189Minecraft implements IMinecraft {
     private Field displayWidthField;
     private Field displayHeightField;
     private Field timerField;
+    private Field rightClickDelayTimerField;
     private Field gameSettingsField;
     private Field leftClickCounterField;
     private Field objectMouseOverField;
@@ -35,6 +36,18 @@ public class Vanilla189Minecraft implements IMinecraft {
     private Field keyBindSneakField;
     private Field keyBindSprintField;
 
+    private Field thePlayerField;
+    private Field theWorldField;
+
+    private Field mopHitTypeField;
+    private Field mopEntityField;
+    private Field mopBlockPosField;
+    private Field mopSideHitField;
+
+    private Method getKeyCodeMethod;
+    private Method setKeyBindStateMethod;
+    private Class<?> keyBindingClass;
+
     private Method clickMouseMethod;
     private Method rightClickMouseMethod;
     private Method displayGuiScreenMethod;
@@ -50,6 +63,11 @@ public class Vanilla189Minecraft implements IMinecraft {
     private Method isButtonDownMethod;
     private Method getXMethod;
     private Method getYMethod;
+
+    private java.lang.reflect.Constructor<?> vec3Constructor;
+    private java.lang.reflect.Constructor<?> blockPosConstructorDouble;
+    private java.lang.reflect.Method enumFacingGetFrontMethod;
+    private java.lang.reflect.Constructor<?> mopConstructor;
 
     public Vanilla189Minecraft() {
         minecraftClass = ReflectionUtil.findClass("net.minecraft.client.Minecraft", "ave");
@@ -70,6 +88,9 @@ public class Vanilla189Minecraft implements IMinecraft {
         gameSettingsField = ReflectionUtil.findField(minecraftClass, "t", "gameSettings", "field_71474_y");
         leftClickCounterField = ReflectionUtil.findField(minecraftClass, "ag", "leftClickCounter", "field_71452_i");
         objectMouseOverField = ReflectionUtil.findField(minecraftClass, "s", "objectMouseOver", "field_71476_x");
+
+        thePlayerField = ReflectionUtil.findField(minecraftClass, "h", "thePlayer", "field_71439_g");
+        theWorldField = ReflectionUtil.findField(minecraftClass, "f", "theWorld", "field_71441_e");
 
         clickMouseMethod = ReflectionUtil.findMethod(minecraftClass,
                 new String[] { "aw", "clickMouse", "func_147121_ag" });
@@ -99,6 +120,22 @@ public class Vanilla189Minecraft implements IMinecraft {
             getYMethod = mouseClass.getMethod("getY");
         } catch (Exception ignored) {
         }
+
+        try {
+            Class<?> vec3Class = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.Vec3", "aui");
+            if (vec3Class != null) vec3Constructor = vec3Class.getConstructor(double.class, double.class, double.class);
+
+            Class<?> blockPosClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.BlockPos", "cj");
+            if (blockPosClass != null) blockPosConstructorDouble = blockPosClass.getConstructor(double.class, double.class, double.class);
+
+            Class<?> enumFacingClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.EnumFacing", "cq");
+            if (enumFacingClass != null) enumFacingGetFrontMethod = com.hades.client.util.ReflectionUtil.findMethod(enumFacingClass, new String[]{"a", "getFront", "func_82600_a"}, int.class);
+
+            Class<?> mopClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.MovingObjectPosition", "auh");
+            if (mopClass != null && vec3Class != null && enumFacingClass != null && blockPosClass != null) {
+                mopConstructor = mopClass.getConstructor(vec3Class, enumFacingClass, blockPosClass);
+            }
+        } catch (Exception e) {}
     }
 
     private Object mc() {
@@ -167,11 +204,9 @@ public class Vanilla189Minecraft implements IMinecraft {
 
     @Override
     public boolean isInGame() {
-        // Fallback for Player vs World check, can be handled loosely here
-        Object thePlayer = ReflectionUtil.getFieldValue(mc(),
-                ReflectionUtil.findField(minecraftClass, "h", "thePlayer", "field_71439_g"));
-        Object theWorld = ReflectionUtil.getFieldValue(mc(),
-                ReflectionUtil.findField(minecraftClass, "f", "theWorld", "field_71441_e"));
+        if (thePlayerField == null || theWorldField == null) return false;
+        Object thePlayer = ReflectionUtil.getFieldValue(mc(), thePlayerField);
+        Object theWorld = ReflectionUtil.getFieldValue(mc(), theWorldField);
         return thePlayer != null && theWorld != null;
     }
 
@@ -215,6 +250,19 @@ public class Vanilla189Minecraft implements IMinecraft {
                 timerSpeedField.setFloat(timer, speed);
             }
         } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    public void setRightClickDelayTimer(int delay) {
+        try {
+            if (rightClickDelayTimerField == null) {
+                rightClickDelayTimerField = ReflectionUtil.findField(mc().getClass(), "ap", "rightClickDelayTimer", "field_71467_ac");
+            }
+            if (rightClickDelayTimerField != null) {
+                rightClickDelayTimerField.setInt(mc(), delay);
+            }
+        } catch (Exception e) {
         }
     }
 
@@ -398,18 +446,12 @@ public class Vanilla189Minecraft implements IMinecraft {
     @Override
     public void setMouseOverBlock(double hitX, double hitY, double hitZ, int blockX, int blockY, int blockZ, int facingId) {
         try {
-            Class<?> vec3Class = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.Vec3", "aui");
-            Object vec3Obj = vec3Class.getConstructor(double.class, double.class, double.class).newInstance(hitX, hitY, hitZ);
-
-            Class<?> blockPosClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.BlockPos", "cj");
-            Object blockPosObj = blockPosClass.getConstructor(double.class, double.class, double.class).newInstance((double)blockX, (double)blockY, (double)blockZ);
-
-            Class<?> enumFacingClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.EnumFacing", "cq");
-            java.lang.reflect.Method getFrontMethod = com.hades.client.util.ReflectionUtil.findMethod(enumFacingClass, new String[]{"a", "getFront", "func_82600_a"}, int.class);
-            Object enumFacingObj = getFrontMethod.invoke(null, facingId);
-
-            Class<?> mopClass = com.hades.client.util.ReflectionUtil.findClass("net.minecraft.util.MovingObjectPosition", "auh");
-            Object mopObj = mopClass.getConstructor(vec3Class, enumFacingClass, blockPosClass).newInstance(vec3Obj, enumFacingObj, blockPosObj);
+            if (vec3Constructor == null || blockPosConstructorDouble == null || enumFacingGetFrontMethod == null || mopConstructor == null) return;
+            
+            Object vec3Obj = vec3Constructor.newInstance(hitX, hitY, hitZ);
+            Object blockPosObj = blockPosConstructorDouble.newInstance((double)blockX, (double)blockY, (double)blockZ);
+            Object enumFacingObj = enumFacingGetFrontMethod.invoke(null, facingId);
+            Object mopObj = mopConstructor.newInstance(vec3Obj, enumFacingObj, blockPosObj);
 
             objectMouseOverField.set(mc(), mopObj);
         } catch (Exception e) {}
@@ -433,14 +475,19 @@ public class Vanilla189Minecraft implements IMinecraft {
             // Universal Approach: use KeyBinding.setKeyBindState(int keyCode, boolean pressed)
             // This natively bypasses LabyMod ToggleSneak overrides because it correctly routes through 
             // the intended class pathways rather than modifying underlying dead fields.
-            Method getCode = ReflectionUtil.findMethod(keyBindSneak.getClass(), new String[] { "i", "getKeyCode", "func_151463_i" });
-            if (getCode != null) {
-                int code = (int) getCode.invoke(keyBindSneak);
-                Class<?> keyBindingClass = ReflectionUtil.findClass("net.minecraft.client.settings.KeyBinding", "avb");
-                Method setBindState = ReflectionUtil.findMethod(keyBindingClass, new String[] { "a", "setKeyBindState", "func_74510_a" }, int.class, boolean.class);
-                if (setBindState != null) {
-                    setBindState.invoke(null, code, pressed);
-                }
+            if (getKeyCodeMethod == null) {
+                getKeyCodeMethod = ReflectionUtil.findMethod(keyBindSneak.getClass(), new String[] { "i", "getKeyCode", "func_151463_i" });
+            }
+            if (keyBindingClass == null) {
+                keyBindingClass = ReflectionUtil.findClass("net.minecraft.client.settings.KeyBinding", "avb");
+            }
+            if (setKeyBindStateMethod == null && keyBindingClass != null) {
+                setKeyBindStateMethod = ReflectionUtil.findMethod(keyBindingClass, new String[] { "a", "setKeyBindState", "func_74510_a" }, int.class, boolean.class);
+            }
+
+            if (getKeyCodeMethod != null && setKeyBindStateMethod != null) {
+                int code = (int) getKeyCodeMethod.invoke(keyBindSneak);
+                setKeyBindStateMethod.invoke(null, code, pressed);
             }
 
             // Fallback to raw field manipulation just in case
@@ -491,10 +538,12 @@ public class Vanilla189Minecraft implements IMinecraft {
             if (keyBindSprint == null)
                 return false;
 
-            Method getCode = ReflectionUtil.findMethod(keyBindSprint.getClass(),
-                    new String[] { "i", "getKeyCode", "func_151463_i" });
-            if (getCode != null) {
-                int code = (int) getCode.invoke(keyBindSprint);
+            if (getKeyCodeMethod == null) {
+                getKeyCodeMethod = ReflectionUtil.findMethod(keyBindSprint.getClass(),
+                        new String[] { "i", "getKeyCode", "func_151463_i" });
+            }
+            if (getKeyCodeMethod != null) {
+                int code = (int) getKeyCodeMethod.invoke(keyBindSprint);
                 return org.lwjgl.input.Keyboard.isKeyDown(code);
             }
         } catch (Exception ignored) {
@@ -546,16 +595,23 @@ public class Vanilla189Minecraft implements IMinecraft {
             Object mouseOver = objectMouseOverField.get(mc());
             if (mouseOver == null) return 0;
             
-            for (Field f : mouseOver.getClass().getDeclaredFields()) {
-                if (f.getType().isEnum() && (f.getType().getSimpleName().contains("MovingObjectType") || f.getType().getSimpleName().equals("a"))) {
-                    f.setAccessible(true);
-                    Object typeEnum = f.get(mouseOver);
-                    if (typeEnum != null) {
-                        String name = ((Enum<?>) typeEnum).name();
-                        if (name.equals("MISS")) return 0;
-                        if (name.equals("BLOCK")) return 1;
-                        if (name.equals("ENTITY")) return 2;
+            if (mopHitTypeField == null) {
+                for (Field f : mouseOver.getClass().getDeclaredFields()) {
+                    if (f.getType().isEnum() && (f.getType().getSimpleName().contains("MovingObjectType") || f.getType().getSimpleName().equals("a"))) {
+                        mopHitTypeField = f;
+                        mopHitTypeField.setAccessible(true);
+                        break;
                     }
+                }
+            }
+
+            if (mopHitTypeField != null) {
+                Object typeEnum = mopHitTypeField.get(mouseOver);
+                if (typeEnum != null) {
+                    String name = ((Enum<?>) typeEnum).name();
+                    if (name.equals("MISS")) return 0;
+                    if (name.equals("BLOCK")) return 1;
+                    if (name.equals("ENTITY")) return 2;
                 }
             }
         } catch (Exception e) {}
@@ -569,11 +625,18 @@ public class Vanilla189Minecraft implements IMinecraft {
             Object mouseOver = objectMouseOverField.get(mc());
             if (mouseOver == null) return null;
             
-            for (Field f : mouseOver.getClass().getDeclaredFields()) {
-                if (f.getType().getSimpleName().equals("Entity") || f.getType().getSimpleName().equals("pk")) {
-                    f.setAccessible(true);
-                    return f.get(mouseOver);
+            if (mopEntityField == null) {
+                for (Field f : mouseOver.getClass().getDeclaredFields()) {
+                    if (f.getType().getSimpleName().equals("Entity") || f.getType().getSimpleName().equals("pk")) {
+                        mopEntityField = f;
+                        mopEntityField.setAccessible(true);
+                        break;
+                    }
                 }
+            }
+            
+            if (mopEntityField != null) {
+                return mopEntityField.get(mouseOver);
             }
         } catch (Exception e) {}
         return null;
@@ -586,11 +649,18 @@ public class Vanilla189Minecraft implements IMinecraft {
             Object mouseOver = objectMouseOverField.get(mc());
             if (mouseOver == null) return null;
             
-            for (Field f : mouseOver.getClass().getDeclaredFields()) {
-                if (f.getType().getSimpleName().equals("BlockPos") || f.getType().getSimpleName().equals("cj")) {
-                    f.setAccessible(true);
-                    return f.get(mouseOver);
+            if (mopBlockPosField == null) {
+                for (Field f : mouseOver.getClass().getDeclaredFields()) {
+                    if (f.getType().getSimpleName().equals("BlockPos") || f.getType().getSimpleName().equals("cj")) {
+                        mopBlockPosField = f;
+                        mopBlockPosField.setAccessible(true);
+                        break;
+                    }
                 }
+            }
+
+            if (mopBlockPosField != null) {
+                return mopBlockPosField.get(mouseOver);
             }
         } catch (Exception e) {}
         return null;
@@ -603,15 +673,36 @@ public class Vanilla189Minecraft implements IMinecraft {
             Object mouseOver = objectMouseOverField.get(mc());
             if (mouseOver == null) return false;
 
-            Field sideHitField = ReflectionUtil.findField(mouseOver.getClass(), "b", "sideHit");
-            if (sideHitField == null) return false;
+            if (mopSideHitField == null) {
+                mopSideHitField = ReflectionUtil.findField(mouseOver.getClass(), "b", "sideHit");
+            }
+            if (mopSideHitField == null) return false;
             
-            Object sideHit = sideHitField.get(mouseOver);
+            Object sideHit = mopSideHitField.get(mouseOver);
             if (sideHit == null) return false;
             
             return sideHit.toString().toUpperCase().contains("UP");
         } catch (Exception e) {
             return false;
+        }
+    }
+    
+    @Override
+    public void setCrackedSession(String username) {
+        try {
+            Class<?> sessionClass = ReflectionUtil.findClass("net.minecraft.util.Session", "avm");
+            if (sessionClass == null) return;
+            
+            Object newSession = sessionClass.getConstructor(String.class, String.class, String.class, String.class)
+                    .newInstance(username, "", "", "legacy");
+
+            Field sessionField = ReflectionUtil.findField(minecraftClass, "ae", "session", "field_71449_j");
+            if (sessionField != null) {
+                sessionField.setAccessible(true);
+                sessionField.set(mc(), newSession);
+            }
+        } catch (Exception e) {
+            com.hades.client.util.HadesLogger.get().error("Failed to inject cracked session", e);
         }
     }
 }

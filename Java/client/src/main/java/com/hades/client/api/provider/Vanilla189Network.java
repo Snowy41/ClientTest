@@ -469,7 +469,9 @@ public class Vanilla189Network implements INetwork {
         if (!isC02Packet(packet)) return null;
         try {
             for (java.lang.reflect.Field f : packet.getClass().getDeclaredFields()) {
-                if (f.getType().isEnum() && f.getType().getSimpleName().contains("Action")) {
+                // Use cached c02ActionEnum type instead of simple name check.
+                // In obfuscated env, the enum class is "in$a" (simpleName="a"), not "Action".
+                if (f.getType().isEnum() && (c02ActionEnum != null && c02ActionEnum.isAssignableFrom(f.getType()))) {
                     f.setAccessible(true);
                     Object action = f.get(packet);
                     if (action != null) return action.toString();

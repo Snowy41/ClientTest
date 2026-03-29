@@ -310,35 +310,6 @@ public class UrlImageCache {
     private static void renderTextureCircle(int textureId, float cx, float cy, float size, int tintColor) {
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
 
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
-        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-
-        GL11.glStencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
-        GL11.glStencilMask(0xFF);
-        GL11.glColorMask(false, false, false, false);
-        GL11.glDepthMask(false);
-
-        float radius = size / 2f;
-        float centerX = cx + radius;
-        float centerY = cy + radius;
-        int segments = 32;
-        
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glBegin(GL11.GL_TRIANGLE_FAN);
-        GL11.glVertex2f(centerX, centerY);
-        for (int i = 0; i <= segments; i++) {
-            float angle = (float) (i * 2.0 * Math.PI / segments);
-            GL11.glVertex2f(centerX + (float) Math.cos(angle) * radius,
-                           centerY + (float) Math.sin(angle) * radius);
-        }
-        GL11.glEnd();
-
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glStencilFunc(GL11.GL_EQUAL, 1, 0xFF);
-        GL11.glStencilMask(0x00);
-
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -358,7 +329,6 @@ public class UrlImageCache {
         GL11.glTexCoord2f(1f, 0f); GL11.glVertex2f(cx + size, cy);
         GL11.glEnd();
 
-        GL11.glDisable(GL11.GL_STENCIL_TEST);
         GL11.glPopAttrib();
     }
 }

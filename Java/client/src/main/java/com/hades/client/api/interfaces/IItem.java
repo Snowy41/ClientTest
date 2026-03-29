@@ -7,6 +7,7 @@ public class IItem {
     private final Object rawItem;
     private static Class<?> itemClass;
     private static Class<?> itemBlockClass;
+    private static Class<?> itemEggClass;
     private static Method getIdMethod;
     private static Method getUnlocalizedNameMethod;
 
@@ -19,6 +20,7 @@ public class IItem {
         if (itemClass == null) {
             itemClass = ReflectionUtil.findClass("net.minecraft.item.Item", "zw");
             itemBlockClass = ReflectionUtil.findClass("net.minecraft.item.ItemBlock", "yo");
+            itemEggClass = ReflectionUtil.findClass("net.minecraft.item.ItemEgg", "aak", "zy");
             
             if (itemClass != null) {
                 // static int getIdFromItem(Item)
@@ -41,6 +43,11 @@ public class IItem {
     public boolean isBlock() {
         if (rawItem == null || itemBlockClass == null) return false;
         return itemBlockClass.isInstance(rawItem);
+    }
+
+    public boolean isEgg() {
+        if (rawItem == null || itemEggClass == null) return false;
+        return itemEggClass.isInstance(rawItem);
     }
 
     public boolean isNull() {
